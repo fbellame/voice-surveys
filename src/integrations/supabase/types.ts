@@ -14,7 +14,148 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      answer: {
+        Row: {
+          answer_text: string
+          answered_at: string | null
+          call_id: number
+          id: number
+          question_id: number
+        }
+        Insert: {
+          answer_text: string
+          answered_at?: string | null
+          call_id: number
+          id?: number
+          question_id: number
+        }
+        Update: {
+          answer_text?: string
+          answered_at?: string | null
+          call_id?: number
+          id?: number
+          question_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "answer_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "call"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answer_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "question"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      call: {
+        Row: {
+          call_timestamp: string | null
+          campaign_id: number
+          id: number
+          phone_number: string
+          s3_recording_url: string | null
+        }
+        Insert: {
+          call_timestamp?: string | null
+          campaign_id: number
+          id?: number
+          phone_number: string
+          s3_recording_url?: string | null
+        }
+        Update: {
+          call_timestamp?: string | null
+          campaign_id?: number
+          id?: number
+          phone_number?: string
+          s3_recording_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign: {
+        Row: {
+          closing: string | null
+          created_at: string | null
+          description: string | null
+          end_date: string | null
+          greeting: string | null
+          id: number
+          intro_prompt: string | null
+          name: string
+          purpose_explanation: string | null
+          start_date: string | null
+        }
+        Insert: {
+          closing?: string | null
+          created_at?: string | null
+          description?: string | null
+          end_date?: string | null
+          greeting?: string | null
+          id?: number
+          intro_prompt?: string | null
+          name: string
+          purpose_explanation?: string | null
+          start_date?: string | null
+        }
+        Update: {
+          closing?: string | null
+          created_at?: string | null
+          description?: string | null
+          end_date?: string | null
+          greeting?: string | null
+          id?: number
+          intro_prompt?: string | null
+          name?: string
+          purpose_explanation?: string | null
+          start_date?: string | null
+        }
+        Relationships: []
+      }
+      question: {
+        Row: {
+          campaign_id: number
+          created_at: string | null
+          id: number
+          question_order: number
+          question_text: string
+        }
+        Insert: {
+          campaign_id: number
+          created_at?: string | null
+          id?: number
+          question_order: number
+          question_text: string
+        }
+        Update: {
+          campaign_id?: number
+          created_at?: string | null
+          id?: number
+          question_order?: number
+          question_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
