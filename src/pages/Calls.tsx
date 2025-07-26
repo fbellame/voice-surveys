@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { StatsCard } from "@/components/StatsCard";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   Phone, 
   Clock, 
@@ -16,81 +17,75 @@ import {
   User
 } from "lucide-react";
 
-// Mock data - will be replaced with Supabase data
-const mockCalls = [
-  {
-    id: 1,
-    phone_number: "+15145859691",
-    campaign_name: "InnoVet-AMR 2024",
-    call_timestamp: "2025-07-26T17:20:47Z",
-    s3_recording_url: null,
-    answers: [
-      {
-        question: "What are your top three trends that are driving change in this space?",
-        answer: "Wildfire, ice melting in Antarctica, destruction of community forest in Amazonia."
-      },
-      {
-        question: "What are some of the biggest challenges and issues you are experiencing?",
-        answer: "Quality of care in Montreal, heatwave in summer, quality of water in Montreal."
-      },
-      {
-        question: "What new opportunities do you see to leverage innovation?",
-        answer: "Use AI to better understand changes and tackle problems; modify government policy to account for those changes."
-      }
-    ]
-  },
-  {
-    id: 2,
-    phone_number: "+15145859691",
-    campaign_name: "InnoVet-AMR 2024",
-    call_timestamp: "2025-07-26T17:27:15Z",
-    s3_recording_url: null,
-    answers: [
-      {
-        question: "What are your top three trends that are driving change in this space?",
-        answer: "Canadian wildfire, Arctic ice meltdown, Amazonian forest destruction."
-      },
-      {
-        question: "What are some of the biggest challenges and issues you are experiencing?",
-        answer: "Air‑quality issues in Montreal summers and overall water quality."
-      },
-      {
-        question: "What new opportunities do you see to leverage innovation?",
-        answer: "Apply AI to analyse change and adjust policy accordingly."
-      }
-    ]
-  },
-  {
-    id: 3,
-    phone_number: "+15145859691",
-    campaign_name: "InnoVet-AMR 2024",
-    call_timestamp: "2025-07-26T17:39:40Z",
-    s3_recording_url: "s3://s3-photo-ai-saas/future_survey/20250726_133939_15145859691_call-_+15145859691_NCx7Lbnwwh5o.mp4",
-    answers: [
-      {
-        question: "What are your top three trends that are driving change in this space?",
-        answer: "Antarctic ice loss, Canadian wildfires, Amazon deforestation."
-      },
-      {
-        question: "What are some of the biggest challenges and issues you are experiencing?",
-        answer: "Montreal air‑quality and water‑quality concerns."
-      },
-      {
-        question: "What new opportunities do you see to leverage innovation?",
-        answer: "Leverage AI for insight and policy change."
-      }
-    ]
-  }
-];
+type CallWithAnswers = {
+  id: number;
+  phone_number: string;
+  call_timestamp: string;
+  s3_recording_url: string | null;
+  campaign: {
+    name: string;
+  };
+  answers: Array<{
+    question: {
+      question_text: string;
+    };
+    answer_text: string;
+  }>;
+};
 
 export default function Calls() {
-  const [calls] = useState(mockCalls);
-  const [selectedCall, setSelectedCall] = useState<typeof mockCalls[0] | null>(null);
+  const [calls, setCalls] = useState<CallWithAnswers[]>([]);
+  const [selectedCall, setSelectedCall] = useState<CallWithAnswers | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchCalls();
+  }, []);
+
+  const fetchCalls = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('call')
+        .select(`
+          id,
+          phone_number,
+          call_timestamp,
+          s3_recording_url,
+          campaign (
+            name
+          ),
+          answer (
+            answer_text,
+            question (
+              question_text
+            )
+          )
+        `)
+        .order('call_timestamp', { ascending: false });
+
+      if (error) throw error;
+      
+      // Transform data to match expected structure
+      const transformedCalls = data?.map(call => ({
+        ...call,
+        answers: call.answer.map(a => ({
+          question: { question_text: a.question.question_text },
+          answer_text: a.answer_text
+        }))
+      })) || [];
+
+      setCalls(transformedCalls);
+    } catch (error) {
+      console.error('Error fetching calls:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const totalCalls = calls.length;
   const callsWithRecordings = calls.filter(c => c.s3_recording_url).length;
   const totalAnswers = calls.reduce((sum, c) => sum + c.answers.length, 0);
-  const avgAnswersPerCall = Math.round(totalAnswers / totalCalls);
+  const avgAnswersPerCall = totalCalls > 0 ? Math.round(totalAnswers / totalCalls) : 0;
 
   return (
     <Layout currentPage="calls">
@@ -145,7 +140,15 @@ export default function Calls() {
               <CardContent>
                 <ScrollArea className="h-[600px]">
                   <div className="space-y-3">
-                    {calls.map((call) => (
+                    {loading ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        Loading calls...
+                      </div>
+                    ) : calls.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No calls found
+                      </div>
+                    ) : calls.map((call) => (
                       <div
                         key={call.id}
                         className={`p-4 rounded-lg border cursor-pointer transition-all ${
@@ -163,7 +166,7 @@ export default function Calls() {
                             <div>
                               <p className="font-medium">{call.phone_number}</p>
                               <p className="text-sm text-muted-foreground">
-                                {call.campaign_name}
+                                {call.campaign?.name || 'Unknown Campaign'}
                               </p>
                             </div>
                           </div>
@@ -224,7 +227,7 @@ export default function Calls() {
                         </span>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        Campaign: {selectedCall.campaign_name}
+                        Campaign: {selectedCall.campaign?.name || 'Unknown Campaign'}
                       </div>
                     </div>
 
@@ -255,10 +258,10 @@ export default function Calls() {
                           {selectedCall.answers.map((answer, index) => (
                             <div key={index} className="space-y-2">
                               <p className="text-sm font-medium text-muted-foreground">
-                                Q{index + 1}: {answer.question}
+                                Q{index + 1}: {answer.question.question_text}
                               </p>
                               <p className="text-sm bg-muted p-3 rounded-md">
-                                {answer.answer}
+                                {answer.answer_text}
                               </p>
                             </div>
                           ))}
