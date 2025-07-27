@@ -5,11 +5,12 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AudioRoom } from '@/components/audio/AudioRoom';
-import { Headphones, Users, Mic, Zap } from 'lucide-react';
+import { SimpleSurvey } from '@/components/audio/SimpleSurvey';
+import { Headphones, Users, Mic, Zap, Bot, ArrowRight } from 'lucide-react';
 
 const Index = () => {
   const navigate = useNavigate();
-  const [showRoom, setShowRoom] = useState(false);
+  const [currentView, setCurrentView] = useState<'home' | 'room' | 'survey'>('home');
   const [roomName, setRoomName] = useState('');
   const [userName, setUserName] = useState('');
 
@@ -22,8 +23,12 @@ const Index = () => {
     navigate(`/room?${params.toString()}`);
   };
 
-  if (showRoom) {
-    return <AudioRoom onLeave={() => setShowRoom(false)} />;
+  if (currentView === 'room') {
+    return <AudioRoom onLeave={() => setCurrentView('home')} />;
+  }
+
+  if (currentView === 'survey') {
+    return <SimpleSurvey onComplete={() => setCurrentView('home')} />;
   }
 
   return (
@@ -46,23 +51,25 @@ const Index = () => {
               friends, or community with crystal-clear sound.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center max-w-md mx-auto">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center max-w-lg mx-auto">
               <Button
-                onClick={() => setShowRoom(true)}
+                onClick={() => setCurrentView('survey')}
                 size="lg"
                 variant="audio"
                 className="w-full sm:w-auto"
               >
-                Quick Start
+                <Bot className="mr-2 h-5 w-5" />
+                Start Survey
               </Button>
               
               <Button
-                onClick={handleQuickJoin}
+                onClick={() => setCurrentView('room')}
                 size="lg"
                 variant="outline"
                 className="w-full sm:w-auto"
               >
-                Join Demo Room
+                <Users className="mr-2 h-5 w-5" />
+                Join Room
               </Button>
             </div>
           </div>
