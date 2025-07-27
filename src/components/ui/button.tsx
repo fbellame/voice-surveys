@@ -18,12 +18,16 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        audio: "bg-gradient-primary text-white hover:shadow-primary transition-all duration-300",
+        "audio-muted": "bg-audio-muted text-white hover:bg-audio-muted/80",
+        "audio-active": "bg-gradient-speaking text-white shadow-speaking hover:shadow-lg transition-all duration-300",
       },
       size: {
         default: "h-10 px-4 py-2",
         sm: "h-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
         icon: "h-10 w-10",
+        "audio-control": "h-16 w-16 rounded-full text-lg shadow-lg",
       },
     },
     defaultVariants: {
