@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* LiveKit Audio App Design System
+Modern audio-focused design with vibrant accent colors for speaking indicators
 */
 
 @layer base {
@@ -17,7 +17,7 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
+    --primary: 262 83% 58%;
     --primary-foreground: 210 40% 98%;
 
     --secondary: 210 40% 96.1%;
@@ -26,8 +26,8 @@ All colors MUST be HSL.
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 142 76% 36%;
+    --accent-foreground: 210 40% 98%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
@@ -36,7 +36,29 @@ All colors MUST be HSL.
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
+
+    /* Audio app specific tokens */
+    --audio-primary: 262 83% 58%;
+    --audio-primary-glow: 262 83% 70%;
+    --audio-success: 142 76% 36%;
+    --audio-success-glow: 142 76% 50%;
+    --audio-speaking: 25 95% 53%;
+    --audio-speaking-glow: 25 95% 65%;
+    --audio-muted: 0 0% 45%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--audio-primary)), hsl(var(--audio-primary-glow)));
+    --gradient-speaking: linear-gradient(135deg, hsl(var(--audio-speaking)), hsl(var(--audio-speaking-glow)));
+    
+    /* Shadows */
+    --shadow-primary: 0 4px 20px hsl(var(--audio-primary) / 0.25);
+    --shadow-speaking: 0 4px 20px hsl(var(--audio-speaking) / 0.4);
+    --shadow-glow: 0 0 30px hsl(var(--audio-primary-glow) / 0.3);
+    
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     --sidebar-background: 0 0% 98%;
 
@@ -65,8 +87,8 @@ All colors MUST be HSL.
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 210 40% 98%;
 
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -74,7 +96,7 @@ All colors MUST be HSL.
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 217.2 32.6% 17.5%;
+    --accent: 142 76% 36%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 62.8% 30.6%;
@@ -83,6 +105,15 @@ All colors MUST be HSL.
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+
+    /* Dark mode audio tokens */
+    --audio-primary: 262 83% 68%;
+    --audio-primary-glow: 262 83% 80%;
+    --audio-success: 142 76% 46%;
+    --audio-success-glow: 142 76% 60%;
+    --audio-speaking: 25 95% 63%;
+    --audio-speaking-glow: 25 95% 75%;
+    --audio-muted: 0 0% 55%;
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
