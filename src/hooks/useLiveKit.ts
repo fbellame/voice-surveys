@@ -85,6 +85,19 @@ export function useLiveKit() {
         }
       });
 
+      // Handle track subscriptions for audio playback
+      newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          const audioElement = track.attach();
+          audioElement.play().catch(console.error);
+        }
+        updateParticipants(newRoom);
+      });
+
+      newRoom.on(RoomEvent.TrackUnsubscribed, () => {
+        updateParticipants(newRoom);
+      });
+
       // Connect to room
       await newRoom.connect(LIVEKIT_CONFIG.LIVEKIT_URL, token);
       
