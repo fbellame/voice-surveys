@@ -55,7 +55,8 @@ export function SimpleSurvey({ campaign, onComplete }: SimpleSurveyProps) {
 
       // Generate room name using pattern or fallback
       const roomPattern = roomMapping?.room_pattern || 'survey-{timestamp}';
-      const roomName = roomPattern.replace('{timestamp}', Date.now().toString());
+      const baseRoomName = roomPattern.replace('{timestamp}', Date.now().toString());
+      const roomName = `${baseRoomName}-${Math.floor(Math.random() * 10000)}`;
       const userName = `user-${Math.floor(Math.random() * 10000)}`;
       
       const token = await generateToken(roomName, userName);
