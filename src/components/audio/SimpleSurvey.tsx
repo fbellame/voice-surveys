@@ -7,11 +7,18 @@ import { Mic, MicOff, User, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
+interface Campaign {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
 interface SimpleSurveyProps {
+  campaign?: Campaign | null;
   onComplete?: () => void;
 }
 
-export function SimpleSurvey({ onComplete }: SimpleSurveyProps) {
+export function SimpleSurvey({ campaign, onComplete }: SimpleSurveyProps) {
   const [surveyActive, setSurveyActive] = useState(false);
   const { toast } = useToast();
   
@@ -77,9 +84,11 @@ export function SimpleSurvey({ onComplete }: SimpleSurveyProps) {
           </div>
           
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold">Future Survey</h1>
+            <h1 className="text-3xl font-bold">
+              {campaign?.name || "Future Survey"}
+            </h1>
             <p className="text-muted-foreground">
-              Participate in an AI-powered survey about the future
+              {campaign?.description || "Participate in an AI-powered survey about the future"}
             </p>
           </div>
 
@@ -101,9 +110,11 @@ export function SimpleSurvey({ onComplete }: SimpleSurveyProps) {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl p-8 space-y-8">
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold">Future Survey in Progress</h2>
+          <h2 className="text-2xl font-bold">
+            {campaign?.name || "Survey"} in Progress
+          </h2>
           <p className="text-muted-foreground">
-            Listen to the AI agent and respond naturally
+            Please wait while the voice assistant speaks...
           </p>
         </div>
 
@@ -181,24 +192,10 @@ export function SimpleSurvey({ onComplete }: SimpleSurveyProps) {
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-center gap-4">
-          <Button
-            variant={isMuted ? "audio-muted" : "audio-active"}
-            size="audio-control"
-            onClick={toggleMute}
-            disabled={!isConnected}
-            className="transition-all duration-300 hover:scale-105"
-          >
-            {isMuted ? (
-              <MicOff className="h-6 w-6" />
-            ) : (
-              <Mic className="h-6 w-6" />
-            )}
-          </Button>
-          
+        <div className="flex items-center justify-center">
           <Button
             variant="destructive"
-            size="audio-control"
+            size="lg"
             onClick={endSurvey}
             disabled={!isConnected}
             className="transition-all duration-300 hover:scale-105"
