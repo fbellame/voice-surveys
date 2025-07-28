@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Mic, MicOff, User, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Campaign {
   id: number;
@@ -40,8 +41,21 @@ export function SimpleSurvey({ campaign, onComplete }: SimpleSurveyProps) {
 
   const startSurvey = async () => {
     try {
-      // Generate unique room and user names
-      const roomName = `survey-${Date.now()}`;
+      // Fetch room pattern from campaign_room_mapping
+      const { data: roomMapping, error: roomError } = await supabase
+        .from('campaign_room_mapping')
+        .select('room_pattern')
+        .eq('campaign_id', campaign?.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (roomError) {
+        console.error('Error fetching room mapping:', roomError);
+      }
+
+      // Generate room name using pattern or fallback
+      const roomPattern = roomMapping?.room_pattern || 'survey-{timestamp}';
+      const roomName = roomPattern.replace('{timestamp}', Date.now().toString());
       const userName = `user-${Math.floor(Math.random() * 10000)}`;
       
       const token = await generateToken(roomName, userName);
