@@ -140,46 +140,6 @@ const Index = () => {
           </div>
         )}
 
-        {/* Audio Room Section */}
-        <div className="mt-16 pt-8 border-t">
-          <Card className="p-8">
-            <h2 className="text-2xl font-bold text-center mb-6">Join a Room</h2>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="roomName">Room Name</Label>
-                  <Input
-                    id="roomName"
-                    placeholder="Enter room name"
-                    value={roomName}
-                    onChange={(e) => setRoomName(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="userName">Your Name</Label>
-                  <Input
-                    id="userName"
-                    placeholder="Enter your name"
-                    value={userName}
-                    onChange={(e) => setUserName(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={handleQuickJoin}
-                variant="outline"
-                size="lg"
-                className="w-full"
-              >
-                <Users className="mr-2 h-5 w-5" />
-                Join Room
-              </Button>
-            </div>
-          </Card>
-        </div>
       </div>
     </div>
   );
