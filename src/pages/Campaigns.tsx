@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/Layout";
 import { StatsCard } from "@/components/StatsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   BarChart3, 
   Phone, 
@@ -16,34 +17,98 @@ import {
   Calendar
 } from "lucide-react";
 
-// Mock data - will be replaced with Supabase data
-const mockCampaigns = [
-  {
-    id: 1,
-    name: "InnoVet-AMR 2024",
-    description: "Survey on climate change, AMR, and animal health.",
-    status: "active",
-    start_date: "2024-01-15",
-    end_date: "2024-12-31",
-    questions: 3,
-    calls: 3,
-    responses: 9
-  },
-  {
-    id: 2,
-    name: "Customer Satisfaction Q4",
-    description: "Quarterly customer satisfaction survey.",
-    status: "draft",
-    start_date: "2024-10-01",
-    end_date: "2024-11-30",
-    questions: 5,
-    calls: 0,
-    responses: 0
-  }
-];
+interface CampaignWithStats {
+  id: number;
+  name: string;
+  description: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: "active" | "draft" | "completed";
+  questions: number;
+  calls: number;
+  responses: number;
+}
 
 export default function Campaigns() {
-  const [campaigns] = useState(mockCampaigns);
+  const [campaigns, setCampaigns] = useState<CampaignWithStats[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      try {
+        // Fetch campaigns with their related data
+        const { data: campaignsData, error: campaignsError } = await supabase
+          .from('campaign')
+          .select('*');
+
+        if (campaignsError) throw campaignsError;
+
+        // Fetch call counts per campaign
+        const { data: callCounts, error: callError } = await supabase
+          .from('call')
+          .select('campaign_id');
+
+        if (callError) throw callError;
+
+        // Fetch question counts per campaign
+        const { data: questionCounts, error: questionError } = await supabase
+          .from('question')
+          .select('campaign_id');
+
+        if (questionError) throw questionError;
+
+        // Fetch answer counts per campaign (via calls)
+        const { data: answerCounts, error: answerError } = await supabase
+          .from('answer')
+          .select('call_id, call!inner(campaign_id)');
+
+        if (answerError) throw answerError;
+
+        // Process the data
+        const campaignsWithStats: CampaignWithStats[] = campaignsData.map(campaign => {
+          const callsForCampaign = callCounts.filter(call => call.campaign_id === campaign.id).length;
+          const questionsForCampaign = questionCounts.filter(q => q.campaign_id === campaign.id).length;
+          const responsesForCampaign = answerCounts.filter(
+            answer => answer.call && answer.call.campaign_id === campaign.id
+          ).length;
+
+          // Determine status based on dates
+          const now = new Date();
+          const startDate = campaign.start_date ? new Date(campaign.start_date) : null;
+          const endDate = campaign.end_date ? new Date(campaign.end_date) : null;
+          
+          let status: "active" | "draft" | "completed" = "draft";
+          if (startDate && endDate) {
+            if (now >= startDate && now <= endDate) {
+              status = "active";
+            } else if (now > endDate) {
+              status = "completed";
+            }
+          }
+
+          return {
+            id: campaign.id,
+            name: campaign.name,
+            description: campaign.description,
+            start_date: campaign.start_date,
+            end_date: campaign.end_date,
+            status,
+            questions: questionsForCampaign,
+            calls: callsForCampaign,
+            responses: responsesForCampaign
+          };
+        });
+
+        setCampaigns(campaignsWithStats);
+      } catch (error) {
+        console.error('Error fetching campaigns:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCampaigns();
+  }, []);
 
   const totalCampaigns = campaigns.length;
   const activeCampaigns = campaigns.filter(c => c.status === "active").length;
@@ -104,8 +169,17 @@ export default function Campaigns() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {campaigns.map((campaign) => (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-muted-foreground">Loading campaigns...</div>
+              </div>
+            ) : campaigns.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-muted-foreground">No campaigns found</div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {campaigns.map((campaign) => (
                 <div
                   key={campaign.id}
                   className="flex items-center justify-between p-6 rounded-lg border bg-card hover:shadow-sm transition-shadow"
@@ -162,7 +236,8 @@ export default function Campaigns() {
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
