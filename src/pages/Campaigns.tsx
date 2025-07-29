@@ -128,7 +128,10 @@ export default function Campaigns() {
               Manage your survey campaigns and track performance
             </p>
           </div>
-          <Button className="bg-gradient-primary hover:opacity-90 transition-opacity">
+          <Button 
+            onClick={() => navigate('/campaigns/new')}
+            className="bg-gradient-primary hover:opacity-90 transition-opacity"
+          >
             <Plus className="mr-2 h-4 w-4" />
             New Campaign
           </Button>

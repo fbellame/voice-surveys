@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Campaigns from "./pages/Campaigns";
 import EditCampaign from "./pages/EditCampaign";
+import CreateCampaign from "./pages/CreateCampaign";
 import Calls from "./pages/Calls";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
           <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/campaigns/new" element={<CreateCampaign />} />
           <Route path="/campaigns/edit/:id" element={<EditCampaign />} />
           <Route path="/calls" element={<Calls />} />
           <Route path="/settings" element={<Settings />} />
