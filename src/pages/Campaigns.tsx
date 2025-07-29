@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { StatsCard } from "@/components/StatsCard";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ interface CampaignWithStats {
 }
 
 export default function Campaigns() {
+  const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<CampaignWithStats[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -212,6 +214,7 @@ export default function Campaigns() {
                       variant="outline"
                       size="sm"
                       className="hover:bg-accent"
+                      onClick={() => navigate(`/campaigns/edit/${campaign.id}`)}
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
