@@ -82,7 +82,7 @@ export default function Answers() {
             name,
             campaign_type
           ),
-          answer:survey_response_id (
+          answer (
             id,
             answer_text,
             answered_at,
