@@ -142,8 +142,8 @@ export default function Answers() {
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
-        title: "Erreur",
-        description: "Erreur lors du chargement des données",
+        title: "Error",
+        description: "Error loading data",
         variant: "destructive",
       });
     } finally {
@@ -176,21 +176,44 @@ export default function Answers() {
     setExpandedRows(newExpanded);
   };
 
-  const openRecording = (url: string) => {
-    window.open(url, '_blank');
+  const openRecording = async (s3Url: string) => {
+    try {
+      // Convert s3:// URL to HTTPS URL
+      const s3UrlMatch = s3Url.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+      if (!s3UrlMatch) {
+        toast({
+          title: "Error",
+          description: "Invalid recording URL format",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const [, bucket, key] = s3UrlMatch;
+      const httpsUrl = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`;
+      
+      window.open(httpsUrl, '_blank');
+    } catch (error) {
+      console.error('Error opening recording:', error);
+      toast({
+        title: "Error",
+        description: "Failed to open recording",
+        variant: "destructive",
+      });
+    }
   };
 
   const exportToCSV = () => {
     const headers = [
-      'ID Réponse',
-      'Campagne',
+      'Response ID',
+      'Campaign',
       'Type',
       'Date',
-      'Téléphone',
-      'Salle',
+      'Phone',
+      'Room',
       'Question',
-      'Réponse',
-      'Ordre Question'
+      'Answer',
+      'Question Order'
     ];
 
     const csvData: string[][] = [];
@@ -199,7 +222,7 @@ export default function Answers() {
         csvData.push([
           response.id.toString(),
           response.campaign.name,
-          response.campaign.campaign_type === 'web_survey' ? 'Sondage Web' : 'Sondage Téléphonique',
+            response.campaign.campaign_type === 'web_survey' ? 'Web Survey' : 'Phone Survey',
           format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
           response.phone_number,
           response.room_name,
@@ -212,7 +235,7 @@ export default function Answers() {
           csvData.push([
             response.id.toString(),
             response.campaign.name,
-            response.campaign.campaign_type === 'web_survey' ? 'Sondage Web' : 'Sondage Téléphonique',
+            response.campaign.campaign_type === 'web_survey' ? 'Web Survey' : 'Phone Survey',
             format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
             response.phone_number,
             response.room_name,
@@ -264,9 +287,9 @@ export default function Answers() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Réponses Sondages</h1>
+          <h1 className="text-3xl font-bold text-foreground">Survey Responses</h1>
           <p className="text-muted-foreground mt-2">
-            Gérer et analyser les réponses aux sondages
+            Manage and analyze survey responses
           </p>
         </div>
 
@@ -275,22 +298,22 @@ export default function Answers() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Filter className="h-5 w-5" />
-              Filtres et Export
+              Filters and Export
             </CardTitle>
             <CardDescription>
-              Filtrer les réponses et exporter les données
+              Filter responses and export data
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4 items-end">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Campagne</label>
+                <label className="text-sm font-medium">Campaign</label>
                 <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
                   <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Toutes les campagnes" />
+                    <SelectValue placeholder="All campaigns" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Toutes les campagnes</SelectItem>
+                    <SelectItem value="all">All campaigns</SelectItem>
                     {campaigns.map(campaign => (
                       <SelectItem key={campaign.id} value={campaign.id.toString()}>
                         {campaign.name}
@@ -301,28 +324,28 @@ export default function Answers() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Période</label>
+                <label className="text-sm font-medium">Period</label>
                 <Select value={timeFilter} onValueChange={setTimeFilter}>
                   <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Toutes" />
+                    <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Toutes</SelectItem>
-                    <SelectItem value="today">Aujourd'hui</SelectItem>
-                    <SelectItem value="week">7 derniers jours</SelectItem>
-                    <SelectItem value="month">30 derniers jours</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">Last 7 days</SelectItem>
+                    <SelectItem value="month">Last 30 days</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2 flex-1 min-w-64">
-                <label className="text-sm font-medium">Recherche</label>
+                <label className="text-sm font-medium">Search</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Rechercher dans les réponses..."
+                    placeholder="Search in responses..."
                     className="pl-10"
                   />
                 </div>
@@ -356,17 +379,17 @@ export default function Answers() {
         <Card className="bg-gradient-card shadow-card border-0">
           <CardHeader>
             <CardTitle>
-              Réponses Sondages ({filteredResponses.length})
+              Survey Responses ({filteredResponses.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="text-center py-8 text-muted-foreground">
-                Chargement des réponses...
+                Loading responses...
               </div>
             ) : filteredResponses.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                Aucune réponse trouvée
+                No responses found
               </div>
             ) : (
               <div className="space-y-4">
@@ -391,7 +414,7 @@ export default function Answers() {
                             <div className="flex items-center gap-2">
                               <h3 className="font-medium">{response.campaign.name}</h3>
                               <Badge variant={response.campaign.campaign_type === 'web_survey' ? 'default' : 'secondary'}>
-                                {response.campaign.campaign_type === 'web_survey' ? 'Web' : 'Téléphone'}
+                                {response.campaign.campaign_type === 'web_survey' ? 'Web' : 'Phone'}
                               </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground">
@@ -400,23 +423,23 @@ export default function Answers() {
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">
-                            {response.answers.length} réponse{response.answers.length > 1 ? 's' : ''}
-                          </span>
-                          {response.s3_recording_url && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openRecording(response.s3_recording_url!)}
-                              className="flex items-center gap-1"
-                            >
-                              <Play className="h-3 w-3" />
-                              Enregistrement
-                              <ExternalLink className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">
+                              {response.answers.length} answer{response.answers.length > 1 ? 's' : ''}
+                            </span>
+                            {response.s3_recording_url && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openRecording(response.s3_recording_url!)}
+                                className="flex items-center gap-1"
+                              >
+                                <Play className="h-3 w-3" />
+                                Recording
+                                <ExternalLink className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                       </div>
 
                       {expandedRows.has(response.id) && response.answers.length > 0 && (
