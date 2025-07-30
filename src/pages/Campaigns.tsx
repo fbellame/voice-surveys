@@ -47,7 +47,7 @@ export default function Campaigns() {
 
         // Fetch call counts per campaign
         const { data: callCounts, error: callError } = await supabase
-          .from('call')
+          .from('survey_response')
           .select('campaign_id');
 
         if (callError) throw callError;
@@ -62,7 +62,7 @@ export default function Campaigns() {
         // Fetch answer counts per campaign (via calls)
         const { data: answerCounts, error: answerError } = await supabase
           .from('answer')
-          .select('call_id, call!inner(campaign_id)');
+          .select('survey_response_id, survey_response!inner(campaign_id)');
 
         if (answerError) throw answerError;
 
@@ -71,7 +71,7 @@ export default function Campaigns() {
           const callsForCampaign = callCounts.filter(call => call.campaign_id === campaign.id).length;
           const questionsForCampaign = questionCounts.filter(q => q.campaign_id === campaign.id).length;
           const responsesForCampaign = answerCounts.filter(
-            answer => answer.call && answer.call.campaign_id === campaign.id
+            answer => answer.survey_response && answer.survey_response.campaign_id === campaign.id
           ).length;
 
           // Determine status based on dates

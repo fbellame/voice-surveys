@@ -18,36 +18,36 @@ export type Database = {
         Row: {
           answer_text: string
           answered_at: string | null
-          call_id: number
           created_at: string | null
           id: number
           question_id: number
+          survey_response_id: number
           updated_at: string | null
         }
         Insert: {
           answer_text: string
           answered_at?: string | null
-          call_id: number
           created_at?: string | null
           id?: number
           question_id: number
+          survey_response_id: number
           updated_at?: string | null
         }
         Update: {
           answer_text?: string
           answered_at?: string | null
-          call_id?: number
           created_at?: string | null
           id?: number
           question_id?: number
+          survey_response_id?: number
           updated_at?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "answer_call_id_fkey"
-            columns: ["call_id"]
+            columns: ["survey_response_id"]
             isOneToOne: false
-            referencedRelation: "call"
+            referencedRelation: "survey_response"
             referencedColumns: ["id"]
           },
           {
@@ -55,47 +55,6 @@ export type Database = {
             columns: ["question_id"]
             isOneToOne: false
             referencedRelation: "question"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      call: {
-        Row: {
-          call_timestamp: string | null
-          campaign_id: number
-          created_at: string | null
-          id: number
-          phone_number: string
-          room_name: string
-          s3_recording_url: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          call_timestamp?: string | null
-          campaign_id: number
-          created_at?: string | null
-          id?: number
-          phone_number: string
-          room_name: string
-          s3_recording_url?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          call_timestamp?: string | null
-          campaign_id?: number
-          created_at?: string | null
-          id?: number
-          phone_number?: string
-          room_name?: string
-          s3_recording_url?: string | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "call_campaign_id_fkey"
-            columns: ["campaign_id"]
-            isOneToOne: false
-            referencedRelation: "campaign"
             referencedColumns: ["id"]
           },
         ]
@@ -208,6 +167,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "question_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      survey_response: {
+        Row: {
+          call_timestamp: string | null
+          campaign_id: number
+          created_at: string | null
+          id: number
+          phone_number: string
+          room_name: string
+          s3_recording_url: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          call_timestamp?: string | null
+          campaign_id: number
+          created_at?: string | null
+          id?: number
+          phone_number: string
+          room_name: string
+          s3_recording_url?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          call_timestamp?: string | null
+          campaign_id?: number
+          created_at?: string | null
+          id?: number
+          phone_number?: string
+          room_name?: string
+          s3_recording_url?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaign"

@@ -45,7 +45,7 @@ export default function Calls() {
   const fetchCalls = async () => {
     try {
       const { data, error } = await supabase
-        .from('call')
+        .from('survey_response')
         .select(`
           id,
           phone_number,
