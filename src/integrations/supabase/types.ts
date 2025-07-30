@@ -19,22 +19,28 @@ export type Database = {
           answer_text: string
           answered_at: string | null
           call_id: number
+          created_at: string | null
           id: number
           question_id: number
+          updated_at: string | null
         }
         Insert: {
           answer_text: string
           answered_at?: string | null
           call_id: number
+          created_at?: string | null
           id?: number
           question_id: number
+          updated_at?: string | null
         }
         Update: {
           answer_text?: string
           answered_at?: string | null
           call_id?: number
+          created_at?: string | null
           id?: number
           question_id?: number
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -57,23 +63,32 @@ export type Database = {
         Row: {
           call_timestamp: string | null
           campaign_id: number
+          created_at: string | null
           id: number
           phone_number: string
+          room_name: string
           s3_recording_url: string | null
+          updated_at: string | null
         }
         Insert: {
           call_timestamp?: string | null
           campaign_id: number
+          created_at?: string | null
           id?: number
           phone_number: string
+          room_name: string
           s3_recording_url?: string | null
+          updated_at?: string | null
         }
         Update: {
           call_timestamp?: string | null
           campaign_id?: number
+          created_at?: string | null
           id?: number
           phone_number?: string
+          room_name?: string
           s3_recording_url?: string | null
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -97,6 +112,7 @@ export type Database = {
           name: string
           purpose_explanation: string | null
           start_date: string | null
+          updated_at: string | null
         }
         Insert: {
           closing?: string | null
@@ -109,6 +125,7 @@ export type Database = {
           name: string
           purpose_explanation?: string | null
           start_date?: string | null
+          updated_at?: string | null
         }
         Update: {
           closing?: string | null
@@ -121,8 +138,44 @@ export type Database = {
           name?: string
           purpose_explanation?: string | null
           start_date?: string | null
+          updated_at?: string | null
         }
         Relationships: []
+      }
+      campaign_room_mapping: {
+        Row: {
+          campaign_id: number
+          created_at: string | null
+          id: number
+          is_active: boolean | null
+          room_pattern: string
+          updated_at: string | null
+        }
+        Insert: {
+          campaign_id: number
+          created_at?: string | null
+          id?: number
+          is_active?: boolean | null
+          room_pattern: string
+          updated_at?: string | null
+        }
+        Update: {
+          campaign_id?: number
+          created_at?: string | null
+          id?: number
+          is_active?: boolean | null
+          room_pattern?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_room_mapping_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       question: {
         Row: {
@@ -131,6 +184,7 @@ export type Database = {
           id: number
           question_order: number
           question_text: string
+          updated_at: string | null
         }
         Insert: {
           campaign_id: number
@@ -138,6 +192,7 @@ export type Database = {
           id?: number
           question_order: number
           question_text: string
+          updated_at?: string | null
         }
         Update: {
           campaign_id?: number
@@ -145,6 +200,7 @@ export type Database = {
           id?: number
           question_order?: number
           question_text?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
