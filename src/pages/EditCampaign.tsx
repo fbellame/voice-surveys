@@ -41,6 +41,7 @@ interface CampaignFormData {
   intro_prompt: string;
   purpose_explanation: string;
   closing: string;
+  room_pattern: string;
 }
 
 export default function EditCampaign() {
@@ -50,6 +51,7 @@ export default function EditCampaign() {
   
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [roomPattern, setRoomPattern] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   const form = useForm<CampaignFormData>();
@@ -77,8 +79,19 @@ export default function EditCampaign() {
 
         if (questionsError) throw questionsError;
 
+        // Fetch room mapping
+        const { data: roomMappingData, error: roomMappingError } = await supabase
+          .from('campaign_room_mapping')
+          .select('room_pattern')
+          .eq('campaign_id', parseInt(id))
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (roomMappingError) throw roomMappingError;
+
         setCampaign(campaignData);
         setQuestions(questionsData || []);
+        setRoomPattern(roomMappingData?.room_pattern || '');
 
         // Set form values
         form.reset({
@@ -90,6 +103,7 @@ export default function EditCampaign() {
           intro_prompt: campaignData.intro_prompt || '',
           purpose_explanation: campaignData.purpose_explanation || '',
           closing: campaignData.closing || '',
+          room_pattern: roomMappingData?.room_pattern || '',
         });
 
       } catch (error) {
@@ -126,6 +140,26 @@ export default function EditCampaign() {
         .eq('id', parseInt(id));
 
       if (error) throw error;
+
+      // Update room mapping
+      // First, deactivate existing mapping
+      await supabase
+        .from('campaign_room_mapping')
+        .update({ is_active: false })
+        .eq('campaign_id', parseInt(id));
+
+      // Then create new mapping if room pattern is provided
+      if (data.room_pattern.trim()) {
+        const { error: roomMappingError } = await supabase
+          .from('campaign_room_mapping')
+          .insert({
+            campaign_id: parseInt(id),
+            room_pattern: data.room_pattern,
+            is_active: true
+          });
+
+        if (roomMappingError) throw roomMappingError;
+      }
 
       toast({
         title: "Success",
@@ -367,6 +401,23 @@ export default function EditCampaign() {
                             <Textarea {...field} />
                           </FormControl>
                           <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="room_pattern"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Room Pattern</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="e.g., call-campaign1-, call-survey-" />
+                          </FormControl>
+                          <FormMessage />
+                          <p className="text-sm text-muted-foreground">
+                            Pattern to identify rooms associated with this campaign
+                          </p>
                         </FormItem>
                       )}
                     />
