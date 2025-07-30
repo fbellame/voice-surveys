@@ -9,6 +9,7 @@ import Campaigns from "./pages/Campaigns";
 import EditCampaign from "./pages/EditCampaign";
 import CreateCampaign from "./pages/CreateCampaign";
 import Calls from "./pages/Calls";
+import Answers from "./pages/Answers";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/campaigns/new" element={<CreateCampaign />} />
           <Route path="/campaigns/edit/:id" element={<EditCampaign />} />
           <Route path="/calls" element={<Calls />} />
+          <Route path="/answers" element={<Answers />} />
           <Route path="/settings" element={<Settings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

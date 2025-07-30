@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
@@ -20,6 +21,7 @@ export default function CreateCampaign() {
   const [campaignForm, setCampaignForm] = useState({
     name: "",
     description: "",
+    campaign_type: "web_survey",
     start_date: "",
     end_date: "",
     intro_prompt: "",
@@ -172,6 +174,28 @@ export default function CreateCampaign() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="campaign_type">Type de campagne</Label>
+                <Select
+                  value={campaignForm.campaign_type}
+                  onValueChange={(value) => handleCampaignFormChange('campaign_type', value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sélectionner le type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="web_survey">Sondage Web</SelectItem>
+                    <SelectItem value="phone_survey">Sondage Téléphonique</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  {campaignForm.campaign_type === 'web_survey' 
+                    ? 'Sondage en ligne avec formulaire web'
+                    : 'Sondage par téléphone avec questions vocales'
+                  }
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="start_date">Date de début</Label>
@@ -233,18 +257,20 @@ export default function CreateCampaign() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="room_pattern">Modèle de salle</Label>
-                <Input
-                  id="room_pattern"
-                  value={campaignForm.room_pattern}
-                  onChange={(e) => handleCampaignFormChange('room_pattern', e.target.value)}
-                  placeholder="ex: call-campaign1-, call-survey-"
-                />
-                <p className="text-sm text-muted-foreground">
-                  Modèle pour identifier les salles associées à cette campagne
-                </p>
-              </div>
+              {campaignForm.campaign_type === 'phone_survey' && (
+                <div className="space-y-2">
+                  <Label htmlFor="room_pattern">Modèle de salle</Label>
+                  <Input
+                    id="room_pattern"
+                    value={campaignForm.room_pattern}
+                    onChange={(e) => handleCampaignFormChange('room_pattern', e.target.value)}
+                    placeholder="ex: call-campaign1-, call-survey-"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Modèle pour identifier les salles associées à cette campagne
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -255,7 +281,10 @@ export default function CreateCampaign() {
                 <div>
                   <CardTitle>Questions</CardTitle>
                   <CardDescription>
-                    Questions à poser pendant les appels
+                    {campaignForm.campaign_type === 'web_survey' 
+                      ? 'Questions à inclure dans le sondage'
+                      : 'Questions à poser pendant les appels'
+                    }
                   </CardDescription>
                 </div>
                 <Button

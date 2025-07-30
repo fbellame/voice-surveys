@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { Save, Plus, Trash2, ArrowLeft } from "lucide-react";
 
@@ -17,6 +18,7 @@ interface Campaign {
   id: number;
   name: string;
   description: string | null;
+  campaign_type: string;
   start_date: string | null;
   end_date: string | null;
   greeting: string | null;
@@ -35,6 +37,7 @@ interface Question {
 interface CampaignFormData {
   name: string;
   description: string;
+  campaign_type: string;
   start_date: string;
   end_date: string;
   greeting: string;
@@ -97,6 +100,7 @@ export default function EditCampaign() {
         form.reset({
           name: campaignData.name,
           description: campaignData.description || '',
+          campaign_type: campaignData.campaign_type || 'web_survey',
           start_date: campaignData.start_date || '',
           end_date: campaignData.end_date || '',
           greeting: campaignData.greeting || '',
@@ -130,6 +134,7 @@ export default function EditCampaign() {
         .update({
           name: data.name,
           description: data.description,
+          campaign_type: data.campaign_type,
           start_date: data.start_date || null,
           end_date: data.end_date || null,
           greeting: data.greeting,
@@ -319,6 +324,31 @@ export default function EditCampaign() {
                           </FormItem>
                         )}
                       />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="campaign_type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Campaign Type</FormLabel>
+                          <FormControl>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select campaign type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="web_survey">Web Survey</SelectItem>
+                                <SelectItem value="phone_survey">Phone Survey</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                       <FormField
                         control={form.control}
@@ -405,22 +435,24 @@ export default function EditCampaign() {
                       )}
                     />
 
-                    <FormField
-                      control={form.control}
-                      name="room_pattern"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Room Pattern</FormLabel>
-                          <FormControl>
-                            <Input {...field} placeholder="e.g., call-campaign1-, call-survey-" />
-                          </FormControl>
-                          <FormMessage />
-                          <p className="text-sm text-muted-foreground">
-                            Pattern to identify rooms associated with this campaign
-                          </p>
-                        </FormItem>
-                      )}
-                    />
+                    {form.watch('campaign_type') === 'phone_survey' && (
+                      <FormField
+                        control={form.control}
+                        name="room_pattern"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Room Pattern</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., call-campaign1-, call-survey-" />
+                            </FormControl>
+                            <FormMessage />
+                            <p className="text-sm text-muted-foreground">
+                              Pattern to identify rooms associated with this campaign
+                            </p>
+                          </FormItem>
+                        )}
+                      />
+                    )}
 
                     <Button type="submit" className="bg-gradient-primary hover:opacity-90">
                       <Save className="h-4 w-4 mr-2" />
