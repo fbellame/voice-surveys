@@ -8,27 +8,31 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Filter, Search } from "lucide-react";
+import { Download, Filter, Search, Play, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
+
+interface SurveyResponse {
+  id: number;
+  phone_number: string;
+  room_name: string;
+  call_timestamp: string;
+  s3_recording_url?: string;
+  campaign: {
+    id: number;
+    name: string;
+    campaign_type: string;
+  };
+  answers: Answer[];
+}
 
 interface Answer {
   id: number;
   answer_text: string;
   answered_at: string;
   question_id: number;
-  call_id?: number;
   question: {
     question_text: string;
     question_order: number;
-    campaign: {
-      id: number;
-      name: string;
-      campaign_type: string;
-    };
-  };
-  call?: {
-    phone_number?: string;
-    room_name?: string;
   };
 }
 
@@ -40,12 +44,13 @@ interface Campaign {
 
 export default function Answers() {
   const { toast } = useToast();
-  const [answers, setAnswers] = useState<Answer[]>([]);
+  const [surveyResponses, setSurveyResponses] = useState<SurveyResponse[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCampaign, setSelectedCampaign] = useState<string>("all");
   const [timeFilter, setTimeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchData();
@@ -63,42 +68,36 @@ export default function Answers() {
       if (campaignsError) throw campaignsError;
       setCampaigns(campaignsData || []);
 
-      // Build query for answers with filters
+      // Build query for survey responses with filters
       let query = supabase
-        .from('answer')
+        .from('survey_response')
         .select(`
           id,
-          answer_text,
-          answered_at,
-          question_id,
-          call_id,
-          question:question_id (
-            question_text,
-            question_order,
-            campaign:campaign_id (
-              id,
-              name,
-              campaign_type
-            )
+          phone_number,
+          room_name,
+          call_timestamp,
+          s3_recording_url,
+          campaign:campaign_id (
+            id,
+            name,
+            campaign_type
           ),
-          call:call_id (
-            phone_number,
-            room_name
+          answer:survey_response_id (
+            id,
+            answer_text,
+            answered_at,
+            question_id,
+            question:question_id (
+              question_text,
+              question_order
+            )
           )
         `)
-        .order('answered_at', { ascending: false });
+        .order('call_timestamp', { ascending: false });
 
       // Apply campaign filter
       if (selectedCampaign !== "all") {
-        const campaignAnswers = await supabase
-          .from('question')
-          .select('id')
-          .eq('campaign_id', parseInt(selectedCampaign));
-        
-        if (campaignAnswers.data) {
-          const questionIds = campaignAnswers.data.map(q => q.id);
-          query = query.in('question_id', questionIds);
-        }
+        query = query.eq('campaign_id', parseInt(selectedCampaign));
       }
 
       // Apply time filter
@@ -120,13 +119,25 @@ export default function Answers() {
             dateLimit = new Date(0);
         }
         
-        query = query.gte('answered_at', dateLimit.toISOString());
+        query = query.gte('call_timestamp', dateLimit.toISOString());
       }
 
-      const { data: answersData, error: answersError } = await query;
+      const { data: responsesData, error: responsesError } = await query;
       
-      if (answersError) throw answersError;
-      setAnswers(answersData || []);
+      if (responsesError) throw responsesError;
+      
+      // Transform data to match our interface
+      const transformedData: SurveyResponse[] = responsesData?.map(response => ({
+        id: response.id,
+        phone_number: response.phone_number,
+        room_name: response.room_name,
+        call_timestamp: response.call_timestamp,
+        s3_recording_url: response.s3_recording_url,
+        campaign: response.campaign as SurveyResponse['campaign'],
+        answers: (response.answer as Answer[])?.sort((a, b) => a.question.question_order - b.question.question_order) || []
+      })) || [];
+
+      setSurveyResponses(transformedData);
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -140,38 +151,78 @@ export default function Answers() {
     }
   };
 
-  const filteredAnswers = answers.filter(answer => {
+  const filteredResponses = surveyResponses.filter(response => {
     if (!searchQuery) return true;
     
     const searchLower = searchQuery.toLowerCase();
     return (
-      answer.answer_text.toLowerCase().includes(searchLower) ||
-      answer.question.question_text.toLowerCase().includes(searchLower) ||
-      answer.question.campaign.name.toLowerCase().includes(searchLower) ||
-      (answer.call?.phone_number && answer.call.phone_number.includes(searchQuery))
+      response.campaign.name.toLowerCase().includes(searchLower) ||
+      response.phone_number.includes(searchQuery) ||
+      response.room_name.toLowerCase().includes(searchLower) ||
+      response.answers.some(answer => 
+        answer.answer_text.toLowerCase().includes(searchLower) ||
+        answer.question.question_text.toLowerCase().includes(searchLower)
+      )
     );
   });
 
+  const toggleExpanded = (responseId: number) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(responseId)) {
+      newExpanded.delete(responseId);
+    } else {
+      newExpanded.add(responseId);
+    }
+    setExpandedRows(newExpanded);
+  };
+
+  const openRecording = (url: string) => {
+    window.open(url, '_blank');
+  };
+
   const exportToCSV = () => {
     const headers = [
+      'ID Réponse',
       'Campagne',
       'Type',
-      'Question',
-      'Réponse',
       'Date',
       'Téléphone',
-      'Salle'
+      'Salle',
+      'Question',
+      'Réponse',
+      'Ordre Question'
     ];
 
-    const csvData = filteredAnswers.map(answer => [
-      answer.question.campaign.name,
-      answer.question.campaign.campaign_type === 'web_survey' ? 'Sondage Web' : 'Sondage Téléphonique',
-      answer.question.question_text,
-      answer.answer_text,
-      format(new Date(answer.answered_at), 'dd/MM/yyyy HH:mm'),
-      answer.call?.phone_number || '-',
-      answer.call?.room_name || '-'
-    ]);
+    const csvData: string[][] = [];
+    filteredResponses.forEach(response => {
+      if (response.answers.length === 0) {
+        csvData.push([
+          response.id.toString(),
+          response.campaign.name,
+          response.campaign.campaign_type === 'web_survey' ? 'Sondage Web' : 'Sondage Téléphonique',
+          format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
+          response.phone_number,
+          response.room_name,
+          '-',
+          '-',
+          '-'
+        ]);
+      } else {
+        response.answers.forEach(answer => {
+          csvData.push([
+            response.id.toString(),
+            response.campaign.name,
+            response.campaign.campaign_type === 'web_survey' ? 'Sondage Web' : 'Sondage Téléphonique',
+            format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
+            response.phone_number,
+            response.room_name,
+            answer.question.question_text,
+            answer.answer_text,
+            answer.question.question_order.toString()
+          ]);
+        });
+      }
+    });
 
     const csvContent = [headers, ...csvData]
       .map(row => row.map(cell => `"${cell}"`).join(','))
@@ -180,26 +231,31 @@ export default function Answers() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `answers_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `survey_responses_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
   };
 
   const exportToJSON = () => {
-    const jsonData = filteredAnswers.map(answer => ({
-      campaign: answer.question.campaign.name,
-      campaign_type: answer.question.campaign.campaign_type,
-      question: answer.question.question_text,
-      question_order: answer.question.question_order,
-      answer: answer.answer_text,
-      answered_at: answer.answered_at,
-      phone_number: answer.call?.phone_number,
-      room_name: answer.call?.room_name
+    const jsonData = filteredResponses.map(response => ({
+      response_id: response.id,
+      campaign: response.campaign.name,
+      campaign_type: response.campaign.campaign_type,
+      timestamp: response.call_timestamp,
+      phone_number: response.phone_number,
+      room_name: response.room_name,
+      s3_recording_url: response.s3_recording_url,
+      answers: response.answers.map(answer => ({
+        question: answer.question.question_text,
+        answer: answer.answer_text,
+        question_order: answer.question.question_order,
+        answered_at: answer.answered_at
+      }))
     }));
 
     const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `answers_${format(new Date(), 'yyyy-MM-dd')}.json`;
+    link.download = `survey_responses_${format(new Date(), 'yyyy-MM-dd')}.json`;
     link.click();
   };
 
@@ -208,7 +264,7 @@ export default function Answers() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Réponses</h1>
+          <h1 className="text-3xl font-bold text-foreground">Réponses Sondages</h1>
           <p className="text-muted-foreground mt-2">
             Gérer et analyser les réponses aux sondages
           </p>
@@ -277,7 +333,7 @@ export default function Answers() {
                   onClick={exportToCSV}
                   variant="outline"
                   className="hover:bg-accent"
-                  disabled={filteredAnswers.length === 0}
+                  disabled={filteredResponses.length === 0}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   CSV
@@ -286,7 +342,7 @@ export default function Answers() {
                   onClick={exportToJSON}
                   variant="outline"
                   className="hover:bg-accent"
-                  disabled={filteredAnswers.length === 0}
+                  disabled={filteredResponses.length === 0}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   JSON
@@ -300,7 +356,7 @@ export default function Answers() {
         <Card className="bg-gradient-card shadow-card border-0">
           <CardHeader>
             <CardTitle>
-              Réponses ({filteredAnswers.length})
+              Réponses Sondages ({filteredResponses.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -308,52 +364,84 @@ export default function Answers() {
               <div className="text-center py-8 text-muted-foreground">
                 Chargement des réponses...
               </div>
-            ) : filteredAnswers.length === 0 ? (
+            ) : filteredResponses.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 Aucune réponse trouvée
               </div>
             ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Campagne</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Question</TableHead>
-                      <TableHead>Réponse</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Contact</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAnswers.map((answer) => (
-                      <TableRow key={answer.id}>
-                        <TableCell className="font-medium">
-                          {answer.question.campaign.name}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={answer.question.campaign.campaign_type === 'web_survey' ? 'default' : 'secondary'}>
-                            {answer.question.campaign.campaign_type === 'web_survey' ? 'Web' : 'Téléphone'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {answer.question.question_text}
-                        </TableCell>
-                        <TableCell className="max-w-sm">
-                          <div className="truncate" title={answer.answer_text}>
-                            {answer.answer_text}
+              <div className="space-y-4">
+                {filteredResponses.map((response) => (
+                  <Card key={response.id} className="border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleExpanded(response.id)}
+                            className="p-1"
+                          >
+                            {expandedRows.has(response.id) ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-medium">{response.campaign.name}</h3>
+                              <Badge variant={response.campaign.campaign_type === 'web_survey' ? 'default' : 'secondary'}>
+                                {response.campaign.campaign_type === 'web_survey' ? 'Web' : 'Téléphone'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm')} • 
+                              {response.campaign.campaign_type === 'phone_survey' ? ` ${response.phone_number}` : ` ${response.room_name}`}
+                            </p>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(answer.answered_at), 'dd/MM/yyyy HH:mm')}
-                        </TableCell>
-                        <TableCell>
-                          {answer.call?.phone_number || 'N/A'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">
+                            {response.answers.length} réponse{response.answers.length > 1 ? 's' : ''}
+                          </span>
+                          {response.s3_recording_url && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openRecording(response.s3_recording_url!)}
+                              className="flex items-center gap-1"
+                            >
+                              <Play className="h-3 w-3" />
+                              Enregistrement
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {expandedRows.has(response.id) && response.answers.length > 0 && (
+                        <div className="mt-4 pt-4 border-t">
+                          <div className="space-y-3">
+                            {response.answers.map((answer) => (
+                              <div key={answer.id} className="bg-muted/50 rounded-lg p-3">
+                                <div className="flex justify-between items-start mb-2">
+                                  <p className="font-medium text-sm">{answer.question.question_text}</p>
+                                  <span className="text-xs text-muted-foreground ml-2">
+                                    #{answer.question.question_order}
+                                  </span>
+                                </div>
+                                <p className="text-sm">{answer.answer_text}</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {format(new Date(answer.answered_at), 'dd/MM/yyyy HH:mm')}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             )}
           </CardContent>
