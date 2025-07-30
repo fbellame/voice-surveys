@@ -25,7 +25,8 @@ export default function CreateCampaign() {
     intro_prompt: "",
     purpose_explanation: "",
     greeting: "",
-    closing: ""
+    closing: "",
+    room_pattern: ""
   });
 
   // Questions state
@@ -84,6 +85,19 @@ export default function CreateCampaign() {
           .insert(questionsToInsert);
 
         if (questionsError) throw questionsError;
+      }
+
+      // Create room mapping if room pattern is provided
+      if (campaignForm.room_pattern.trim()) {
+        const { error: roomMappingError } = await supabase
+          .from('campaign_room_mapping')
+          .insert({
+            campaign_id: campaign.id,
+            room_pattern: campaignForm.room_pattern,
+            is_active: true
+          });
+
+        if (roomMappingError) throw roomMappingError;
       }
 
 
@@ -217,6 +231,19 @@ export default function CreateCampaign() {
                   onChange={(e) => handleCampaignFormChange('closing', e.target.value)}
                   placeholder="Message de fermeture"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="room_pattern">Modèle de salle</Label>
+                <Input
+                  id="room_pattern"
+                  value={campaignForm.room_pattern}
+                  onChange={(e) => handleCampaignFormChange('room_pattern', e.target.value)}
+                  placeholder="ex: call-campaign1-, call-survey-"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Modèle pour identifier les salles associées à cette campagne
+                </p>
               </div>
             </CardContent>
           </Card>
