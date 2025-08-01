@@ -13,6 +13,7 @@ interface Campaign {
   id: number;
   name: string;
   description: string | null;
+  campaign_uri: string;
 }
 
 const Index = () => {
@@ -29,7 +30,7 @@ const Index = () => {
       try {
         const { data, error } = await supabase
           .from('campaign')
-          .select('id, name, description')
+          .select('id, name, description, campaign_uri')
           .order('created_at', { ascending: true });
 
         if (error) {
@@ -57,12 +58,8 @@ const Index = () => {
   };
 
   const handleStartSurvey = (campaign: Campaign) => {
-    // Use the campaign name as-is for the URL if it's already URL-friendly,
-    // otherwise create a slug
-    const slug = campaign.name.includes(' ') 
-      ? campaign.name.toLowerCase().replace(/\s+/g, '-')
-      : campaign.name;
-    navigate(`/${slug}`);
+    // Use the campaign_uri directly for navigation
+    navigate(`/${campaign.campaign_uri}`);
   };
 
   if (currentView === 'room') {

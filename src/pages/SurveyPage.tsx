@@ -10,6 +10,7 @@ interface Campaign {
   id: number;
   name: string;
   description: string | null;
+  campaign_uri: string;
 }
 
 const SurveyPage = () => {
@@ -28,42 +29,12 @@ const SurveyPage = () => {
       }
 
       try {
-        // Try multiple matching strategies for campaign names
-        let data = null;
-        let fetchError = null;
-
-        // Strategy 1: Direct exact match (case sensitive)
-        const result1 = await supabase
+        // Simple lookup using the campaign_uri column
+        const { data, error: fetchError } = await supabase
           .from('campaign')
           .select('*')
-          .eq('name', surveySlug)
+          .eq('campaign_uri', surveySlug)
           .maybeSingle();
-        
-        if (result1.data) {
-          data = result1.data;
-        } else {
-          // Strategy 2: Case-insensitive exact match
-          const result2 = await supabase
-            .from('campaign')
-            .select('*')
-            .ilike('name', surveySlug)
-            .maybeSingle();
-          
-          if (result2.data) {
-            data = result2.data;
-          } else {
-            // Strategy 3: Convert slug to spaced name and try case-insensitive match
-            const spacedName = surveySlug.replace(/-/g, ' ');
-            const result3 = await supabase
-              .from('campaign')
-              .select('*')
-              .ilike('name', spacedName)
-              .maybeSingle();
-            
-            data = result3.data;
-            fetchError = result3.error;
-          }
-        }
 
         if (fetchError) {
           console.error('Error fetching campaign:', fetchError);
