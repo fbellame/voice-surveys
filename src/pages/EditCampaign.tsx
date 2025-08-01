@@ -147,20 +147,22 @@ export default function EditCampaign() {
       if (error) throw error;
 
       // Update room mapping
-      // First, deactivate existing mapping
+      // First, deactivate existing mapping for this campaign
       await supabase
         .from('campaign_room_mapping')
         .update({ is_active: false })
         .eq('campaign_id', parseInt(id));
 
-      // Then create new mapping if room pattern is provided
+      // Then upsert new mapping if room pattern is provided
       if (data.room_pattern.trim()) {
         const { error: roomMappingError } = await supabase
           .from('campaign_room_mapping')
-          .insert({
+          .upsert({
             campaign_id: parseInt(id),
             room_pattern: data.room_pattern,
             is_active: true
+          }, {
+            onConflict: 'room_pattern'
           });
 
         if (roomMappingError) throw roomMappingError;
