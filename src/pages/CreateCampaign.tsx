@@ -91,12 +91,12 @@ export default function CreateCampaign() {
       }
 
       // Create room mapping if room pattern is provided
-      if (campaignForm.room_pattern.trim()) {
+      if (room_pattern.trim()) {
         const { error: roomMappingError } = await supabase
           .from('campaign_room_mapping')
           .insert({
             campaign_id: campaign.id,
-            room_pattern: campaignForm.room_pattern,
+            room_pattern: room_pattern,
             is_active: true
           });
 
