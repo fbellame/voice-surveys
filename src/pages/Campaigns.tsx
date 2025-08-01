@@ -200,25 +200,21 @@ export default function Campaigns() {
             title="Total Campaigns"
             value={totalCampaigns}
             icon={BarChart3}
-            trend={{ value: 12, isPositive: true }}
           />
           <StatsCard
             title="Active Campaigns"
             value={activeCampaigns}
             icon={Play}
-            trend={{ value: 8, isPositive: true }}
           />
           <StatsCard
             title="Total Calls"
             value={totalCalls}
             icon={Phone}
-            trend={{ value: 23, isPositive: true }}
           />
           <StatsCard
             title="Total Responses"
             value={totalResponses}
             icon={Users}
-            trend={{ value: 31, isPositive: true }}
           />
         </div>
 
