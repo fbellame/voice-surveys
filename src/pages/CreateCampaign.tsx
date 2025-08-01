@@ -35,7 +35,14 @@ export default function CreateCampaign() {
   const [questions, setQuestions] = useState([{ question_text: "", question_order: 1 }]);
 
   const handleCampaignFormChange = (field: string, value: string) => {
-    setCampaignForm(prev => ({ ...prev, [field]: value }));
+    setCampaignForm(prev => {
+      const updated = { ...prev, [field]: value };
+      // Auto-generate room_pattern when name changes
+      if (field === 'name' && value.trim()) {
+        updated.room_pattern = `${value.toLowerCase().replace(/\s+/g, '-')}-`;
+      }
+      return updated;
+    });
   };
 
   const handleQuestionChange = (index: number, value: string) => {
@@ -258,20 +265,18 @@ export default function CreateCampaign() {
                 />
               </div>
 
-              {campaignForm.campaign_type === 'phone_survey' && (
-                <div className="space-y-2">
-                  <Label htmlFor="room_pattern">Modèle de salle</Label>
-                  <Input
-                    id="room_pattern"
-                    value={campaignForm.room_pattern}
-                    onChange={(e) => handleCampaignFormChange('room_pattern', e.target.value)}
-                    placeholder="ex: call-campaign1-, call-survey-"
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Modèle pour identifier les salles associées à cette campagne
-                  </p>
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="room_pattern">Modèle de salle</Label>
+                <Input
+                  id="room_pattern"
+                  value={campaignForm.room_pattern}
+                  onChange={(e) => handleCampaignFormChange('room_pattern', e.target.value)}
+                  placeholder="ex: campaign-name-, survey-test-"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Modèle pour identifier les salles associées à cette campagne
+                </p>
+              </div>
             </CardContent>
           </Card>
 
