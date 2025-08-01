@@ -57,8 +57,9 @@ const Index = () => {
   };
 
   const handleStartSurvey = (campaign: Campaign) => {
-    setSelectedCampaign(campaign);
-    setCurrentView('survey');
+    // Create URL-friendly slug from campaign name
+    const slug = campaign.name.toLowerCase().replace(/\s+/g, '-');
+    navigate(`/${slug}`);
   };
 
   if (currentView === 'room') {
