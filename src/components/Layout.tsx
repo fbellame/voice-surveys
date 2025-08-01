@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage?: "campaigns" | "calls" | "answers" | "settings";
+  currentPage?: "campaigns" | "answers" | "settings";
 }
 
 export function Layout({ children, currentPage }: LayoutProps) {
@@ -23,7 +23,6 @@ export function Layout({ children, currentPage }: LayoutProps) {
 
   const navigation = [
     { name: "Campaigns", href: "/campaigns", icon: BarChart3, current: currentPage === "campaigns" },
-    { name: "Calls", href: "/calls", icon: Phone, current: currentPage === "calls" },
     { name: "Answers", href: "/answers", icon: MessageSquare, current: currentPage === "answers" },
     { name: "Settings", href: "/settings", icon: Settings, current: currentPage === "settings" },
   ];
