@@ -63,10 +63,11 @@ export default function CreateCampaign() {
     setLoading(true);
 
     try {
-      // Create campaign
+      // Create campaign - exclude room_pattern as it's not part of the campaign table
+      const { room_pattern, ...campaignData } = campaignForm;
       const { data: campaign, error: campaignError } = await supabase
         .from('campaign')
-        .insert([campaignForm])
+        .insert([campaignData])
         .select()
         .single();
 
