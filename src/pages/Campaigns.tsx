@@ -5,6 +5,8 @@ import { StatsCard } from "@/components/StatsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   BarChart3, 
@@ -32,6 +34,7 @@ interface CampaignWithStats {
 
 export default function Campaigns() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<CampaignWithStats[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -111,6 +114,60 @@ export default function Campaigns() {
 
     fetchCampaigns();
   }, []);
+
+  const handleDeleteCampaign = async (campaignId: number, campaignName: string) => {
+    try {
+      // Delete related data first (foreign key constraints)
+      await supabase
+        .from('campaign_room_mapping')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      await supabase
+        .from('answer')
+        .delete()
+        .in('survey_response_id', 
+          (await supabase
+            .from('survey_response')
+            .select('id')
+            .eq('campaign_id', campaignId)
+          ).data?.map(sr => sr.id) || []
+        );
+
+      await supabase
+        .from('survey_response')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      await supabase
+        .from('question')
+        .delete()
+        .eq('campaign_id', campaignId);
+
+      // Finally delete the campaign
+      const { error } = await supabase
+        .from('campaign')
+        .delete()
+        .eq('id', campaignId);
+
+      if (error) throw error;
+
+      // Update local state
+      setCampaigns(prev => prev.filter(c => c.id !== campaignId));
+      
+      toast({
+        title: "Campaign deleted",
+        description: `"${campaignName}" has been successfully deleted.`,
+      });
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete campaign. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const totalCampaigns = campaigns.length;
   const activeCampaigns = campaigns.filter(c => c.status === "active").length;
@@ -232,13 +289,34 @@ export default function Campaigns() {
                         <Play className="h-4 w-4" />
                       )}
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{campaign.name}"? This action cannot be undone and will permanently delete the campaign along with all associated questions, calls, and responses.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               ))}
