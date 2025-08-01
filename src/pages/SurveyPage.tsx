@@ -28,14 +28,26 @@ const SurveyPage = () => {
       }
 
       try {
-        // Convert slug back to campaign name (reverse of slug creation)
-        const campaignName = surveySlug.replace(/-/g, ' ');
-        
-        const { data, error: fetchError } = await supabase
+        // First try exact slug match (for names that are already URL-friendly)
+        let { data, error: fetchError } = await supabase
           .from('campaign')
           .select('*')
-          .ilike('name', campaignName)
+          .eq('name', surveySlug)
           .maybeSingle();
+
+        // If no exact match, try converting slug back to name with spaces
+        if (!data && !fetchError) {
+          const campaignName = surveySlug.replace(/-/g, ' ');
+          
+          const result = await supabase
+            .from('campaign')
+            .select('*')
+            .ilike('name', campaignName)
+            .maybeSingle();
+            
+          data = result.data;
+          fetchError = result.error;
+        }
 
         if (fetchError) {
           console.error('Error fetching campaign:', fetchError);

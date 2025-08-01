@@ -57,8 +57,11 @@ const Index = () => {
   };
 
   const handleStartSurvey = (campaign: Campaign) => {
-    // Create URL-friendly slug from campaign name
-    const slug = campaign.name.toLowerCase().replace(/\s+/g, '-');
+    // Use the campaign name as-is for the URL if it's already URL-friendly,
+    // otherwise create a slug
+    const slug = campaign.name.includes(' ') 
+      ? campaign.name.toLowerCase().replace(/\s+/g, '-')
+      : campaign.name;
     navigate(`/${slug}`);
   };
 
