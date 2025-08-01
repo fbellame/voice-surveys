@@ -12,6 +12,7 @@ interface Campaign {
   id: number;
   name: string;
   description: string | null;
+  campaign_uri: string;
 }
 
 interface SimpleSurveyProps {
