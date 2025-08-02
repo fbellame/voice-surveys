@@ -17,13 +17,15 @@ import {
   Trash2, 
   Play,
   Pause,
-  Calendar
+  Calendar,
+  Share2
 } from "lucide-react";
 
 interface CampaignWithStats {
   id: number;
   name: string;
   description: string | null;
+  campaign_uri: string | null;
   start_date: string | null;
   end_date: string | null;
   status: "active" | "draft" | "completed";
@@ -70,7 +72,7 @@ export default function Campaigns() {
         if (answerError) throw answerError;
 
         // Process the data
-        const campaignsWithStats: CampaignWithStats[] = campaignsData.map(campaign => {
+        const campaignsWithStats: CampaignWithStats[] = (campaignsData as any[]).map(campaign => {
           const callsForCampaign = callCounts.filter(call => call.campaign_id === campaign.id).length;
           const questionsForCampaign = questionCounts.filter(q => q.campaign_id === campaign.id).length;
           const responsesForCampaign = answerCounts.filter(
@@ -95,6 +97,7 @@ export default function Campaigns() {
             id: campaign.id,
             name: campaign.name,
             description: campaign.description,
+            campaign_uri: campaign.campaign_uri,
             start_date: campaign.start_date,
             end_date: campaign.end_date,
             status,
@@ -164,6 +167,33 @@ export default function Campaigns() {
       toast({
         title: "Error",
         description: "Failed to delete campaign. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleShareCampaign = async (campaign: CampaignWithStats) => {
+    if (!campaign.campaign_uri) {
+      toast({
+        title: "No survey URL",
+        description: "This campaign doesn't have a URI configured.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const surveyUrl = `https://survey.generative-ai.ca/${campaign.campaign_uri}`;
+    
+    try {
+      await navigator.clipboard.writeText(surveyUrl);
+      toast({
+        title: "Survey URL copied!",
+        description: "The survey link has been copied to your clipboard.",
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to copy",
+        description: "Please copy the URL manually: " + surveyUrl,
         variant: "destructive",
       });
     }
@@ -266,6 +296,15 @@ export default function Campaigns() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="hover:bg-accent"
+                      onClick={() => handleShareCampaign(campaign)}
+                      disabled={!campaign.campaign_uri}
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
