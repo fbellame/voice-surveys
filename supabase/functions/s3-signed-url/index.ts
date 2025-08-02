@@ -51,6 +51,8 @@ serve(async (req) => {
   try {
     const { s3Url } = await req.json()
     
+    console.log('Received S3 URL:', s3Url)
+    
     if (!s3Url) {
       return new Response(
         JSON.stringify({ error: "s3Url is required" }),
@@ -74,13 +76,16 @@ serve(async (req) => {
     }
 
     const [, bucket, key] = s3UrlMatch
-    const region = "us-east-2"
+    const region = Deno.env.get('AWS_REGION') || "us-east-2"
+    
+    console.log('Parsed S3 details:', { bucket, key, region })
     
     // Get AWS credentials from environment
     const accessKeyId = Deno.env.get('AWS_ACCESS_KEY_ID')
     const secretAccessKey = Deno.env.get('AWS_SECRET_ACCESS_KEY')
     
     if (!accessKeyId || !secretAccessKey) {
+      console.error('AWS credentials missing:', { accessKeyId: !!accessKeyId, secretAccessKey: !!secretAccessKey })
       return new Response(
         JSON.stringify({ error: "AWS credentials not configured" }),
         { 
@@ -99,18 +104,40 @@ serve(async (req) => {
     const signedHeaders = 'host'
     const expires = '3600' // 1 hour
     
-    // Create canonical request
+    console.log('Signing details:', { dateString, datetimeString, credential })
+    
+    // Properly encode the key for URL path
+    const encodedKey = key.split('/').map(part => encodeURIComponent(part)).join('/')
+    
+    // Create query string parameters in correct order (alphabetical)
+    const queryParams = [
+      `X-Amz-Algorithm=AWS4-HMAC-SHA256`,
+      `X-Amz-Credential=${encodeURIComponent(credential)}`,
+      `X-Amz-Date=${datetimeString}`,
+      `X-Amz-Expires=${expires}`,
+      `X-Amz-SignedHeaders=${signedHeaders}`
+    ].join('&')
+    
+    // Create canonical request (must match exactly what will be signed)
     const canonicalHeaders = `host:${bucket}.s3.${region}.amazonaws.com\n`
-    const canonicalRequest = `GET\n/${key}\nX-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(credential)}&X-Amz-Date=${datetimeString}&X-Amz-Expires=${expires}&X-Amz-SignedHeaders=${signedHeaders}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`
+    const canonicalRequest = `GET\n/${encodedKey}\n${queryParams}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`
+    
+    console.log('Canonical request:', canonicalRequest)
     
     // Create string to sign
     const stringToSign = `AWS4-HMAC-SHA256\n${datetimeString}\n${dateString}/${region}/s3/aws4_request\n${await sha256(canonicalRequest)}`
     
+    console.log('String to sign:', stringToSign)
+    
     // Calculate signature
     const signature = await calculateSignature(secretAccessKey, dateString, region, 's3', stringToSign)
     
-    // Build final signed URL
-    const signedUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(credential)}&X-Amz-Date=${datetimeString}&X-Amz-Expires=${expires}&X-Amz-SignedHeaders=${signedHeaders}&X-Amz-Signature=${signature}`
+    console.log('Generated signature:', signature)
+    
+    // Build final signed URL with query params in correct order
+    const signedUrl = `https://${bucket}.s3.${region}.amazonaws.com/${encodedKey}?${queryParams}&X-Amz-Signature=${signature}`
+    
+    console.log('Final signed URL:', signedUrl)
 
     return new Response(
       JSON.stringify({ signedUrl }),
@@ -122,7 +149,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error generating signed URL:', error)
     return new Response(
-      JSON.stringify({ error: "Failed to generate signed URL" }),
+      JSON.stringify({ error: "Failed to generate signed URL", details: error.message }),
       { 
         status: 500, 
         headers: { ...corsHeaders, "Content-Type": "application/json" }
