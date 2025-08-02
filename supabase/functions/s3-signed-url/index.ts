@@ -5,6 +5,44 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
+// Helper function to calculate SHA256 hash
+async function sha256(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Helper function to calculate HMAC-SHA256
+async function hmacSha256(key: Uint8Array, message: string): Promise<Uint8Array> {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', 
+    key, 
+    { name: 'HMAC', hash: 'SHA-256' }, 
+    false, 
+    ['sign']
+  )
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message))
+  return new Uint8Array(signature)
+}
+
+// Helper function to calculate AWS Signature Version 4
+async function calculateSignature(
+  secretAccessKey: string,
+  dateString: string,
+  region: string,
+  service: string,
+  stringToSign: string
+): Promise<string> {
+  const kDate = await hmacSha256(new TextEncoder().encode(`AWS4${secretAccessKey}`), dateString)
+  const kRegion = await hmacSha256(kDate, region)
+  const kService = await hmacSha256(kRegion, service)
+  const kSigning = await hmacSha256(kService, 'aws4_request')
+  const signature = await hmacSha256(kSigning, stringToSign)
+  
+  return Array.from(signature).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -38,15 +76,44 @@ serve(async (req) => {
     const [, bucket, key] = s3UrlMatch
     const region = "us-east-2"
     
-    // Generate signed URL
-    const signedUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${Deno.env.get('AWS_ACCESS_KEY_ID')}%2F${new Date().toISOString().split('T')[0].replace(/-/g, '')}%2F${region}%2Fs3%2Faws4_request&X-Amz-Date=${new Date().toISOString().replace(/[:-]|\.\d{3}/g, '')}&X-Amz-Expires=3600&X-Amz-Security-Token=${encodeURIComponent(Deno.env.get('AWS_SESSION_TOKEN') || '')}&X-Amz-Signature=placeholder&X-Amz-SignedHeaders=host&response-content-disposition=inline`
+    // Get AWS credentials from environment
+    const accessKeyId = Deno.env.get('AWS_ACCESS_KEY_ID')
+    const secretAccessKey = Deno.env.get('AWS_SECRET_ACCESS_KEY')
+    
+    if (!accessKeyId || !secretAccessKey) {
+      return new Response(
+        JSON.stringify({ error: "AWS credentials not configured" }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      )
+    }
 
-    // For simplicity, just construct a basic signed URL format
-    // In production, you'd use proper AWS SDK for signing
-    const basicUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`
+    // Generate signed URL using AWS Signature Version 4
+    const now = new Date()
+    const dateString = now.toISOString().split('T')[0].replace(/-/g, '')
+    const datetimeString = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+    
+    const credential = `${accessKeyId}/${dateString}/${region}/s3/aws4_request`
+    const signedHeaders = 'host'
+    const expires = '3600' // 1 hour
+    
+    // Create canonical request
+    const canonicalHeaders = `host:${bucket}.s3.${region}.amazonaws.com\n`
+    const canonicalRequest = `GET\n/${key}\nX-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(credential)}&X-Amz-Date=${datetimeString}&X-Amz-Expires=${expires}&X-Amz-SignedHeaders=${signedHeaders}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`
+    
+    // Create string to sign
+    const stringToSign = `AWS4-HMAC-SHA256\n${datetimeString}\n${dateString}/${region}/s3/aws4_request\n${await sha256(canonicalRequest)}`
+    
+    // Calculate signature
+    const signature = await calculateSignature(secretAccessKey, dateString, region, 's3', stringToSign)
+    
+    // Build final signed URL
+    const signedUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=${encodeURIComponent(credential)}&X-Amz-Date=${datetimeString}&X-Amz-Expires=${expires}&X-Amz-SignedHeaders=${signedHeaders}&X-Amz-Signature=${signature}`
 
     return new Response(
-      JSON.stringify({ signedUrl: basicUrl }),
+      JSON.stringify({ signedUrl }),
       { 
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
