@@ -178,21 +178,30 @@ export default function Answers() {
 
   const openRecording = async (s3Url: string) => {
     try {
-      // Convert s3:// URL to HTTPS URL
-      const s3UrlMatch = s3Url.match(/^s3:\/\/([^\/]+)\/(.+)$/);
-      if (!s3UrlMatch) {
+      // Call the edge function to get a signed URL
+      const { data, error } = await supabase.functions.invoke('s3-signed-url', {
+        body: { s3Url }
+      });
+
+      if (error) {
+        console.error('Error getting signed URL:', error);
         toast({
           title: "Error",
-          description: "Invalid recording URL format",
+          description: "Failed to access recording",
           variant: "destructive",
         });
         return;
       }
 
-      const [, bucket, key] = s3UrlMatch;
-      const httpsUrl = `https://${bucket}.s3.us-east-2.amazonaws.com/${key}`;
-      
-      window.open(httpsUrl, '_blank');
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, '_blank');
+      } else {
+        toast({
+          title: "Error",
+          description: "Invalid response from server",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error('Error opening recording:', error);
       toast({
