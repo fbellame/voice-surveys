@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import Index from "./pages/Index";
+
 import Login from "./pages/Login";
 import { Auth } from "./pages/Auth";
 import Campaigns from "./pages/Campaigns";
@@ -40,11 +40,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route 
             path="/" 
-            element={
-              <ProtectedRoute>
-                <Index />
-              </ProtectedRoute>
-            } 
+            element={<Navigate to="/campaigns" replace />} 
           />
           <Route path="/login" element={<Login />} />
           <Route 
