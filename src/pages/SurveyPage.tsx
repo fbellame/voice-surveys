@@ -31,9 +31,8 @@ const SurveyPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [surveyCompleted, setSurveyCompleted] = useState(false);
 
-  const token = searchParams.get('token');
-  console.log('Raw token from URL:', token);
-  console.log('Decoded token:', token ? decodeURIComponent(token) : null);
+  const rawToken = searchParams.get('token');
+  const token = rawToken ? decodeURIComponent(rawToken) : null;
 
   useEffect(() => {
     const fetchSurveyData = async () => {
