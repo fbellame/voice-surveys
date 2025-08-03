@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLiveKit } from '@/hooks/useLiveKit';
 import { generateToken } from '@/utils/token';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Mic, MicOff, User, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface Campaign {
   id: number;
@@ -40,7 +41,15 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     activity: '',
     email: invitation?.email || ''
   });
+  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
   const { toast } = useToast();
+
+  // Get current user
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setCurrentUser(user);
+    });
+  }, []);
   
   const {
     isConnected,
@@ -54,9 +63,9 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
 
   // Find agent and user participants
   const agent = participants.find(p => p.participant.identity.includes('agent') || p.participant.identity.includes('bot'));
-  const user = participants.find(p => p.participant.isLocal);
+  const localUser = participants.find(p => p.participant.isLocal);
   const isAgentSpeaking = agent?.isSpeaking || false;
-  const isUserSpeaking = user?.isSpeaking || false;
+  const isUserSpeaking = localUser?.isSpeaking || false;
 
   const handleUserInfoSubmit = () => {
     if (!userInfo.fullName.trim() || !userInfo.location.trim() || !userInfo.activity.trim()) {
@@ -111,6 +120,34 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
   const endSurvey = async () => {
     await leaveRoom();
     setSurveyActive(false);
+    
+    // Save survey response with user_id
+    if (currentUser && campaign) {
+      try {
+        await supabase
+          .from('survey_response')
+          .insert({
+            campaign_id: campaign.id,
+            user_id: currentUser.id,
+            phone_number: userInfo.email, // Using email as identifier
+            room_name: `survey-${Date.now()}`,
+            invitation_token: invitation?.unique_token
+          });
+
+        // Update invitation status if this was from an invitation
+        if (invitation) {
+          await supabase
+            .from('survey_invitations')
+            .update({ 
+              responded_at: new Date().toISOString(),
+              user_id: currentUser.id 
+            })
+            .eq('unique_token', invitation.unique_token);
+        }
+      } catch (error) {
+        console.error('Error saving survey response:', error);
+      }
+    }
     
     toast({
       title: "Survey Completed",

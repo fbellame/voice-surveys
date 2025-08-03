@@ -5,6 +5,7 @@ import { SimpleSurvey } from '@/components/audio/SimpleSurvey';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
+import type { User, Session } from '@supabase/supabase-js';
 
 interface Campaign {
   id: number;
@@ -30,13 +31,46 @@ const SurveyPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [surveyCompleted, setSurveyCompleted] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   const rawToken = searchParams.get('token');
   // Handle URL encoding: + signs in URLs become spaces when decoded, so convert them back
   const token = rawToken ? rawToken.replace(/ /g, '+') : null;
 
   useEffect(() => {
-    const fetchSurveyData = async () => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (!session && token) {
+          // If no session but there's a token, redirect to auth with return URL
+          navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        }
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session && token) {
+        navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      } else {
+        // Fetch survey data after auth is confirmed
+        setTimeout(() => {
+          fetchSurveyData();
+        }, 0);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [surveySlug, token, navigate]);
+
+  const fetchSurveyData = async () => {
       if (!surveySlug) {
         setError('No survey specified');
         setLoading(false);
@@ -122,21 +156,8 @@ const SurveyPage = () => {
       }
     };
 
-    fetchSurveyData();
-  }, [surveySlug, token]);
 
   const handleComplete = async () => {
-    // Update invitation status if token was used
-    if (invitation && token) {
-      try {
-        await (supabase as any)
-          .from('survey_invitations')
-          .update({ responded_at: new Date().toISOString() })
-          .eq('unique_token', token);
-      } catch (err) {
-        console.error('Error updating invitation status:', err);
-      }
-    }
     setSurveyCompleted(true);
   };
 
