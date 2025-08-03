@@ -7,7 +7,9 @@ import { Label } from '@/components/ui/label';
 import { AudioRoom } from '@/components/audio/AudioRoom';
 import { SimpleSurvey } from '@/components/audio/SimpleSurvey';
 import { supabase } from '@/integrations/supabase/client';
-import { Headphones, Users, Mic, Zap, Bot, ArrowRight, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { Headphones, Users, Mic, Zap, Bot, ArrowRight, Loader2, LogOut } from 'lucide-react';
+import type { User, Session } from '@supabase/supabase-js';
 
 interface Campaign {
   id: number;
@@ -18,35 +20,65 @@ interface Campaign {
 
 const Index = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [currentView, setCurrentView] = useState<'home' | 'room' | 'survey'>('home');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [roomName, setRoomName] = useState('');
   const [userName, setUserName] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    const fetchCampaigns = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('campaign')
-          .select('id, name, description, campaign_uri')
-          .order('created_at', { ascending: true });
-
-        if (error) {
-          console.error('Error fetching campaigns:', error);
-        } else {
-          setCampaigns(data || []);
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (!session) {
+          navigate('/auth');
         }
-      } catch (err) {
-        console.error('Error:', err);
-      } finally {
-        setLoading(false);
       }
-    };
+    );
 
-    fetchCampaigns();
-  }, []);
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session) {
+        navigate('/auth');
+      } else {
+        // Only fetch campaigns if user is authenticated
+        setTimeout(() => {
+          fetchCampaigns();
+        }, 0);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const fetchCampaigns = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('campaign')
+        .select('id, name, description, campaign_uri')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching campaigns:', error);
+      } else {
+        setCampaigns(data || []);
+      }
+    } catch (err) {
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleQuickJoin = () => {
     const params = new URLSearchParams({
@@ -60,6 +92,22 @@ const Index = () => {
   const handleStartSurvey = (campaign: Campaign) => {
     // Use the campaign_uri directly for navigation
     navigate(`/${campaign.campaign_uri}`);
+  };
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast({
+        title: "Sign Out Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Signed out",
+        description: "You have been successfully signed out."
+      });
+    }
   };
 
   if (currentView === 'room') {
@@ -82,18 +130,34 @@ const Index = () => {
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-primary opacity-5" />
         <div className="relative max-w-6xl mx-auto px-4 py-12">
-          <div className="text-center space-y-6">
-            <div className="mx-auto h-16 w-16 bg-gradient-primary rounded-full flex items-center justify-center mb-6 shadow-glow">
-              <Bot className="h-8 w-8 text-white" />
+          <div className="flex justify-between items-start mb-8">
+            <div className="flex-1 text-center">
+              <div className="mx-auto h-16 w-16 bg-gradient-primary rounded-full flex items-center justify-center mb-6 shadow-glow">
+                <Bot className="h-8 w-8 text-white" />
+              </div>
+              
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                Future Surveys
+              </h1>
+              
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Select a survey below to begin your AI-powered conversation
+              </p>
             </div>
             
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-              Future Surveys
-            </h1>
-            
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Select a survey below to begin your AI-powered conversation
-            </p>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-muted-foreground">
+                {user?.email}
+              </span>
+              <Button
+                onClick={handleSignOut}
+                variant="outline"
+                size="sm"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </Button>
+            </div>
           </div>
         </div>
       </div>
