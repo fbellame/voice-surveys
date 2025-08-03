@@ -147,10 +147,10 @@ export default function EditCampaign() {
       if (error) throw error;
 
       // Update room mapping
-      // First, deactivate existing mapping for this campaign
+      // First, delete existing mappings for this campaign
       await supabase
         .from('campaign_room_mapping')
-        .update({ is_active: false })
+        .delete()
         .eq('campaign_id', parseInt(id));
 
       // Then insert new mapping if room pattern is provided
