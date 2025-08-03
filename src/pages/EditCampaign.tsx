@@ -25,6 +25,7 @@ interface Campaign {
   intro_prompt: string | null;
   purpose_explanation: string | null;
   closing: string | null;
+  campaign_uri: string | null;
 }
 
 interface Question {
@@ -45,6 +46,7 @@ interface CampaignFormData {
   purpose_explanation: string;
   closing: string;
   room_pattern: string;
+  campaign_uri: string;
 }
 
 export default function EditCampaign() {
@@ -92,7 +94,7 @@ export default function EditCampaign() {
 
         if (roomMappingError) throw roomMappingError;
 
-        setCampaign(campaignData);
+        setCampaign({...(campaignData as any), campaign_uri: (campaignData as any).campaign_uri || null});
         setQuestions(questionsData || []);
         setRoomPattern(roomMappingData?.room_pattern || '');
 
@@ -108,6 +110,7 @@ export default function EditCampaign() {
           purpose_explanation: campaignData.purpose_explanation || '',
           closing: campaignData.closing || '',
           room_pattern: roomMappingData?.room_pattern || '',
+          campaign_uri: (campaignData as any).campaign_uri || '',
         });
 
       } catch (error) {
@@ -141,6 +144,7 @@ export default function EditCampaign() {
           intro_prompt: data.intro_prompt,
           purpose_explanation: data.purpose_explanation,
           closing: data.closing,
+          campaign_uri: data.campaign_uri,
         })
         .eq('id', parseInt(id));
 
@@ -453,6 +457,23 @@ export default function EditCampaign() {
                         )}
                       />
                     )}
+
+                    <FormField
+                      control={form.control}
+                      name="campaign_uri"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Campaign URI</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="e.g., campaign-name, survey-test" />
+                          </FormControl>
+                          <FormMessage />
+                          <p className="text-sm text-muted-foreground">
+                            Unique URI to access the campaign
+                          </p>
+                        </FormItem>
+                      )}
+                    />
 
                     <Button type="submit" className="bg-gradient-primary hover:opacity-90">
                       <Save className="h-4 w-4 mr-2" />
