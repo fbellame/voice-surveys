@@ -3,6 +3,8 @@ import { useLiveKit } from '@/hooks/useLiveKit';
 import { generateToken } from '@/utils/token';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Mic, MicOff, User, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -31,6 +33,13 @@ interface SimpleSurveyProps {
 
 export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyProps) {
   const [surveyActive, setSurveyActive] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [userInfo, setUserInfo] = useState({
+    fullName: '',
+    location: '',
+    activity: '',
+    email: invitation?.email || ''
+  });
   const { toast } = useToast();
   
   const {
@@ -48,6 +57,19 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
   const user = participants.find(p => p.participant.isLocal);
   const isAgentSpeaking = agent?.isSpeaking || false;
   const isUserSpeaking = user?.isSpeaking || false;
+
+  const handleUserInfoSubmit = () => {
+    if (!userInfo.fullName.trim() || !userInfo.location.trim() || !userInfo.activity.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+    setShowUserForm(false);
+    startSurvey();
+  };
 
   const startSurvey = async () => {
     try {
@@ -75,7 +97,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
       
       toast({
         title: "Survey Started",
-        description: "Your future survey session has begun",
+        description: "Your survey session has begun",
       });
     } catch (err) {
       toast({
@@ -101,6 +123,90 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
   };
 
   if (!surveyActive && !isConnected) {
+    if (showUserForm || invitation) {
+      return (
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <Card className="w-full max-w-md p-8 space-y-6">
+            <div className="mx-auto h-16 w-16 bg-gradient-primary rounded-full flex items-center justify-center mb-6">
+              <Bot className="h-8 w-8 text-white" />
+            </div>
+            
+            <div className="space-y-2 text-center">
+              <h1 className="text-3xl font-bold">
+                {campaign?.name || "Survey"}
+              </h1>
+              <p className="text-muted-foreground">
+                Please provide your information to begin
+              </p>
+              {invitation && (
+                <p className="text-sm text-muted-foreground">
+                  Private invitation for: {invitation.email}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={userInfo.email}
+                  disabled={!!invitation}
+                  onChange={(e) => setUserInfo({...userInfo, email: e.target.value})}
+                  placeholder="your@email.com"
+                  className="bg-background"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="fullName">Full Name *</Label>
+                <Input
+                  id="fullName"
+                  value={userInfo.fullName}
+                  onChange={(e) => setUserInfo({...userInfo, fullName: e.target.value})}
+                  placeholder="Enter your full name"
+                  className="bg-background"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="location">Location *</Label>
+                <Input
+                  id="location"
+                  value={userInfo.location}
+                  onChange={(e) => setUserInfo({...userInfo, location: e.target.value})}
+                  placeholder="Enter your location"
+                  className="bg-background"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="activity">Activity *</Label>
+                <Input
+                  id="activity"
+                  value={userInfo.activity}
+                  onChange={(e) => setUserInfo({...userInfo, activity: e.target.value})}
+                  placeholder="Enter your activity/profession"
+                  className="bg-background"
+                />
+              </div>
+            </div>
+
+            <Button 
+              onClick={handleUserInfoSubmit}
+              disabled={isConnecting}
+              className="w-full"
+              variant="audio"
+              size="lg"
+            >
+              {isConnecting ? "Starting..." : "Start Survey"}
+            </Button>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md p-8 text-center space-y-6">
@@ -110,26 +216,21 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
           
           <div className="space-y-2">
             <h1 className="text-3xl font-bold">
-              {campaign?.name || "Future Survey"}
+              {campaign?.name || "Survey"}
             </h1>
             <p className="text-muted-foreground">
-              {campaign?.description || "Participate in an AI-powered survey about the future"}
+              {campaign?.description || "Participate in an AI-powered survey"}
             </p>
-            {invitation && (
-              <p className="text-sm text-muted-foreground">
-                Private invitation for: {invitation.email}
-              </p>
-            )}
           </div>
 
           <Button 
-            onClick={startSurvey}
+            onClick={() => setShowUserForm(true)}
             disabled={isConnecting}
             className="w-full"
             variant="audio"
             size="lg"
           >
-            {isConnecting ? "Starting..." : "Start Future Survey"}
+            {isConnecting ? "Starting..." : "Start Survey"}
           </Button>
         </Card>
       </div>
