@@ -29,6 +29,7 @@ const SurveyPage = () => {
   const [invitation, setInvitation] = useState<SurveyInvitation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [surveyCompleted, setSurveyCompleted] = useState(false);
 
   const token = searchParams.get('token');
 
@@ -117,7 +118,7 @@ const SurveyPage = () => {
         console.error('Error updating invitation status:', err);
       }
     }
-    navigate('/');
+    setSurveyCompleted(true);
   };
 
   if (loading) {
@@ -140,6 +141,30 @@ const SurveyPage = () => {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Survey List
           </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (surveyCompleted) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md p-8 text-center space-y-6">
+          <div className="mx-auto h-16 w-16 bg-gradient-primary rounded-full flex items-center justify-center mb-6">
+            <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold">Thank You!</h1>
+            <p className="text-muted-foreground">
+              Thank you for responding to the survey "{campaign?.name}".
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Your participation is greatly appreciated.
+            </p>
+          </div>
         </Card>
       </div>
     );
