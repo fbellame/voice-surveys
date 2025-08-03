@@ -177,36 +177,89 @@ export type Database = {
           },
         ]
       }
+      survey_invitations: {
+        Row: {
+          campaign_id: number
+          created_at: string
+          email: string
+          id: string
+          qr_code_url: string | null
+          responded_at: string | null
+          sent_at: string | null
+          unique_token: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          campaign_id: number
+          created_at?: string
+          email: string
+          id?: string
+          qr_code_url?: string | null
+          responded_at?: string | null
+          sent_at?: string | null
+          unique_token?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          campaign_id?: number
+          created_at?: string
+          email?: string
+          id?: string
+          qr_code_url?: string | null
+          responded_at?: string | null
+          sent_at?: string | null
+          unique_token?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "survey_invitations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       survey_response: {
         Row: {
           call_timestamp: string | null
           campaign_id: number
           created_at: string | null
           id: number
+          invitation_token: string | null
           phone_number: string
           room_name: string
           s3_recording_url: string | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           call_timestamp?: string | null
           campaign_id: number
           created_at?: string | null
           id?: number
+          invitation_token?: string | null
           phone_number: string
           room_name: string
           s3_recording_url?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           call_timestamp?: string | null
           campaign_id?: number
           created_at?: string | null
           id?: number
+          invitation_token?: string | null
           phone_number?: string
           room_name?: string
           s3_recording_url?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -215,6 +268,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "campaign"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "survey_response_invitation_token_fkey"
+            columns: ["invitation_token"]
+            isOneToOne: false
+            referencedRelation: "survey_invitations"
+            referencedColumns: ["unique_token"]
           },
         ]
       }

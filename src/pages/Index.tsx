@@ -63,6 +63,25 @@ const Index = () => {
 
   const fetchCampaigns = async () => {
     try {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      // Fetch campaigns that the user has access to
+      // Either campaigns they have invitations for, or public campaigns
+      const { data: userInvitations, error: invitationError } = await supabase
+        .from('survey_invitations')
+        .select('campaign_id')
+        .eq('user_id', user.id);
+
+      if (invitationError) {
+        console.error('Error fetching user invitations:', invitationError);
+      }
+
+      const campaignIds = userInvitations?.map(inv => inv.campaign_id) || [];
+      
+      // For now, show all campaigns (you can modify this based on your business logic)
       const { data, error } = await supabase
         .from('campaign')
         .select('id, name, description, campaign_uri')
