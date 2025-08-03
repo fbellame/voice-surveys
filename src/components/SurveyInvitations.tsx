@@ -95,6 +95,7 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
         .insert({
           campaign_id: campaignId,
           email: email.trim(),
+          user_id: (await supabase.auth.getUser()).data.user?.id,
         })
         .select()
         .single();
