@@ -86,7 +86,8 @@ const SurveyPage = () => {
           }
 
           if (invitationData.responded_at) {
-            setError('This survey has already been completed');
+            const completedDate = new Date(invitationData.responded_at).toLocaleDateString();
+            setError(`This survey has been completed on ${completedDate}`);
             setLoading(false);
             return;
           }
