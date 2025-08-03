@@ -67,12 +67,19 @@ const SurveyPage = () => {
 
         // If token is provided, validate it
         if (token) {
+          console.log('Processing token:', token);
+          console.log('Token length:', token.length);
+          console.log('Campaign ID:', campaignData.id);
+          
           const { data: invitationData, error: invitationError } = await (supabase as any)
             .from('survey_invitations')
             .select('id, campaign_id, email, unique_token, responded_at')
             .eq('unique_token', token)
             .eq('campaign_id', campaignData.id)
             .maybeSingle();
+
+          console.log('Invitation query result:', invitationData);
+          console.log('Invitation query error:', invitationError);
 
           if (invitationError) {
             console.error('Error fetching invitation:', invitationError);
@@ -82,6 +89,16 @@ const SurveyPage = () => {
           }
 
           if (!invitationData) {
+            console.log('No invitation data found. Trying broader search...');
+            
+            // Try to find any token that matches (debugging)
+            const { data: allTokens } = await (supabase as any)
+              .from('survey_invitations')
+              .select('unique_token, campaign_id')
+              .eq('campaign_id', campaignData.id);
+            
+            console.log('All tokens for this campaign:', allTokens);
+            
             setError('Invalid or expired survey link');
             setLoading(false);
             return;
