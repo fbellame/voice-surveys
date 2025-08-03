@@ -15,12 +15,21 @@ interface Campaign {
   campaign_uri: string;
 }
 
+interface SurveyInvitation {
+  id: string;
+  campaign_id: number;
+  email: string;
+  unique_token: string;
+  responded_at: string | null;
+}
+
 interface SimpleSurveyProps {
   campaign?: Campaign | null;
+  invitation?: SurveyInvitation | null;
   onComplete?: () => void;
 }
 
-export function SimpleSurvey({ campaign, onComplete }: SimpleSurveyProps) {
+export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyProps) {
   const [surveyActive, setSurveyActive] = useState(false);
   const { toast } = useToast();
   
@@ -106,6 +115,11 @@ export function SimpleSurvey({ campaign, onComplete }: SimpleSurveyProps) {
             <p className="text-muted-foreground">
               {campaign?.description || "Participate in an AI-powered survey about the future"}
             </p>
+            {invitation && (
+              <p className="text-sm text-muted-foreground">
+                Private invitation for: {invitation.email}
+              </p>
+            )}
           </div>
 
           <Button 

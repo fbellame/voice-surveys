@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { SimpleSurvey } from '@/components/audio/SimpleSurvey';
@@ -13,15 +13,27 @@ interface Campaign {
   campaign_uri: string;
 }
 
+interface SurveyInvitation {
+  id: string;
+  campaign_id: number;
+  email: string;
+  unique_token: string;
+  responded_at: string | null;
+}
+
 const SurveyPage = () => {
   const { surveySlug } = useParams<{ surveySlug: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [invitation, setInvitation] = useState<SurveyInvitation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const token = searchParams.get('token');
+
   useEffect(() => {
-    const fetchCampaign = async () => {
+    const fetchSurveyData = async () => {
       if (!surveySlug) {
         setError('No survey specified');
         setLoading(false);
@@ -29,20 +41,57 @@ const SurveyPage = () => {
       }
 
       try {
-        // Simple lookup using the campaign_uri column
-        const { data, error: fetchError } = await supabase
+        // First, get the campaign
+        const { data: campaignData, error: campaignError } = await supabase
           .from('campaign')
           .select('*')
           .eq('campaign_uri', surveySlug)
           .maybeSingle();
 
-        if (fetchError) {
-          console.error('Error fetching campaign:', fetchError);
+        if (campaignError) {
+          console.error('Error fetching campaign:', campaignError);
           setError('Failed to load survey');
-        } else if (!data) {
+          setLoading(false);
+          return;
+        }
+
+        if (!campaignData) {
           setError('Survey not found');
-        } else {
-          setCampaign(data);
+          setLoading(false);
+          return;
+        }
+
+        setCampaign(campaignData);
+
+        // If token is provided, validate it
+        if (token) {
+          const { data: invitationData, error: invitationError } = await (supabase as any)
+            .from('survey_invitations')
+            .select('id, campaign_id, email, unique_token, responded_at')
+            .eq('unique_token', token)
+            .eq('campaign_id', campaignData.id)
+            .maybeSingle();
+
+          if (invitationError) {
+            console.error('Error fetching invitation:', invitationError);
+            setError('Invalid survey link');
+            setLoading(false);
+            return;
+          }
+
+          if (!invitationData) {
+            setError('Invalid or expired survey link');
+            setLoading(false);
+            return;
+          }
+
+          if (invitationData.responded_at) {
+            setError('This survey has already been completed');
+            setLoading(false);
+            return;
+          }
+
+          setInvitation(invitationData);
         }
       } catch (err) {
         console.error('Error:', err);
@@ -52,10 +101,21 @@ const SurveyPage = () => {
       }
     };
 
-    fetchCampaign();
-  }, [surveySlug]);
+    fetchSurveyData();
+  }, [surveySlug, token]);
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
+    // Update invitation status if token was used
+    if (invitation && token) {
+      try {
+        await (supabase as any)
+          .from('survey_invitations')
+          .update({ responded_at: new Date().toISOString() })
+          .eq('unique_token', token);
+      } catch (err) {
+        console.error('Error updating invitation status:', err);
+      }
+    }
     navigate('/');
   };
 
@@ -84,7 +144,7 @@ const SurveyPage = () => {
     );
   }
 
-  return <SimpleSurvey campaign={campaign} onComplete={handleComplete} />;
+  return <SimpleSurvey campaign={campaign} invitation={invitation} onComplete={handleComplete} />;
 };
 
 export default SurveyPage;
