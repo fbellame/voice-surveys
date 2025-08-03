@@ -188,6 +188,7 @@ export type Database = {
           sent_at: string | null
           unique_token: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           campaign_id: number
@@ -199,6 +200,7 @@ export type Database = {
           sent_at?: string | null
           unique_token?: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           campaign_id?: number
@@ -210,6 +212,7 @@ export type Database = {
           sent_at?: string | null
           unique_token?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -232,6 +235,7 @@ export type Database = {
           room_name: string
           s3_recording_url: string | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           call_timestamp?: string | null
@@ -243,6 +247,7 @@ export type Database = {
           room_name: string
           s3_recording_url?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           call_timestamp?: string | null
@@ -254,6 +259,7 @@ export type Database = {
           room_name?: string
           s3_recording_url?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
