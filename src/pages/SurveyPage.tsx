@@ -32,7 +32,8 @@ const SurveyPage = () => {
   const [surveyCompleted, setSurveyCompleted] = useState(false);
 
   const rawToken = searchParams.get('token');
-  const token = rawToken ? decodeURIComponent(rawToken) : null;
+  // Handle URL encoding: + signs in URLs become spaces when decoded, so convert them back
+  const token = rawToken ? rawToken.replace(/ /g, '+') : null;
 
   useEffect(() => {
     const fetchSurveyData = async () => {
