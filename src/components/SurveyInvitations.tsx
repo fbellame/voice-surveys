@@ -90,12 +90,17 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
     setLoading(true);
     try {
       // Create the invitation record
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       const { data: invitation, error } = await supabase
         .from('survey_invitations')
         .insert({
           campaign_id: campaignId,
           email: email.trim(),
-          user_id: (await supabase.auth.getUser()).data.user?.id,
+          user_id: user.id,
         })
         .select()
         .single();
