@@ -62,6 +62,7 @@ export type Database = {
       campaign: {
         Row: {
           campaign_type: string
+          campaign_uri: string | null
           closing: string | null
           created_at: string | null
           description: string | null
@@ -76,6 +77,7 @@ export type Database = {
         }
         Insert: {
           campaign_type?: string
+          campaign_uri?: string | null
           closing?: string | null
           created_at?: string | null
           description?: string | null
@@ -90,6 +92,7 @@ export type Database = {
         }
         Update: {
           campaign_type?: string
+          campaign_uri?: string | null
           closing?: string | null
           created_at?: string | null
           description?: string | null
