@@ -28,7 +28,8 @@ export default function CreateCampaign() {
     purpose_explanation: "",
     greeting: "",
     closing: "",
-    room_pattern: ""
+    room_pattern: "",
+    campaign_uri: ""
   });
 
   // Questions state
@@ -37,9 +38,11 @@ export default function CreateCampaign() {
   const handleCampaignFormChange = (field: string, value: string) => {
     setCampaignForm(prev => {
       const updated = { ...prev, [field]: value };
-      // Auto-generate room_pattern when name changes
+      // Auto-generate room_pattern and campaign_uri when name changes
       if (field === 'name' && value.trim()) {
-        updated.room_pattern = `${value.toLowerCase().replace(/\s+/g, '-')}-`;
+        const slug = value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        updated.room_pattern = `${slug}-`;
+        updated.campaign_uri = slug;
       }
       return updated;
     });
@@ -275,6 +278,19 @@ export default function CreateCampaign() {
                 />
                 <p className="text-sm text-muted-foreground">
                   Modèle pour identifier les salles associées à cette campagne
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="campaign_uri">URI de la campagne</Label>
+                <Input
+                  id="campaign_uri"
+                  value={campaignForm.campaign_uri}
+                  onChange={(e) => handleCampaignFormChange('campaign_uri', e.target.value)}
+                  placeholder="ex: campaign-name, survey-test"
+                />
+                <p className="text-sm text-muted-foreground">
+                  URI unique pour accéder à la campagne (sera générée automatiquement)
                 </p>
               </div>
             </CardContent>
