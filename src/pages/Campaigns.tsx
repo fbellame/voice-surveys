@@ -18,8 +18,10 @@ import {
   Play,
   Pause,
   Calendar,
-  Share2
+  Share2,
+  Link
 } from "lucide-react";
+import { SurveyInvitations } from "@/components/SurveyInvitations";
 
 interface CampaignWithStats {
   id: number;
@@ -39,6 +41,7 @@ export default function Campaigns() {
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<CampaignWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCampaignForInvitations, setSelectedCampaignForInvitations] = useState<CampaignWithStats | null>(null);
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -300,6 +303,15 @@ export default function Campaigns() {
                       variant="outline"
                       size="sm"
                       className="hover:bg-accent"
+                      onClick={() => setSelectedCampaignForInvitations(campaign)}
+                      disabled={!campaign.campaign_uri}
+                    >
+                      <Link className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="hover:bg-accent"
                       onClick={() => handleShareCampaign(campaign)}
                       disabled={!campaign.campaign_uri}
                     >
@@ -359,6 +371,34 @@ export default function Campaigns() {
             )}
           </CardContent>
         </Card>
+
+        {/* Survey Invitations Modal/Section */}
+        {selectedCampaignForInvitations && (
+          <Card className="bg-gradient-card shadow-card border-0">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Survey Invitations - {selectedCampaignForInvitations.name}</CardTitle>
+                  <CardDescription>
+                    Create unique survey links with QR codes for specific users
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedCampaignForInvitations(null)}
+                >
+                  Close
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <SurveyInvitations
+                campaignId={selectedCampaignForInvitations.id}
+                campaignUri={selectedCampaignForInvitations.campaign_uri || ''}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </Layout>
   );
