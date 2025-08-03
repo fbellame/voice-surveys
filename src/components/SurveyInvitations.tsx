@@ -57,7 +57,7 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
   }, [campaignId]);
 
   const generateSurveyUrl = (token: string) => {
-    return `${window.location.origin}/survey/${campaignUri}?token=${token}`;
+    return `https://survey.generative-ai.ca/survey/${campaignUri}?token=${token}`;
   };
 
   const generateQRCode = async (url: string): Promise<string> => {
