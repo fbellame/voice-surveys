@@ -124,13 +124,16 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     setSurveyActive(false);
     
     // Save user profile and survey response data
-    if (currentUser && campaign && currentRoomName) {
+    if (campaign && currentRoomName) {
       try {
-        // Save user profile information
+        // Generate a unique user ID for this survey participant
+        const participantUserId = crypto.randomUUID();
+        
+        // Save user profile information for the survey participant
         const { error: profileError } = await supabase
           .from('user_profiles')
-          .upsert({
-            user_id: currentUser.id,
+          .insert({
+            user_id: participantUserId,
             full_name: userInfo.fullName,
             geography: userInfo.location,
             occupation: userInfo.activity,
@@ -161,7 +164,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
           const { error: updateError } = await supabase
             .from('survey_response')
             .update({
-              user_id: currentUser.id,
+              user_id: participantUserId,
               phone_number: userInfo.email,
               invitation_token: invitation?.unique_token,
               updated_at: new Date().toISOString()
@@ -177,7 +180,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
             .from('survey_response')
             .insert({
               campaign_id: campaign.id,
-              user_id: currentUser.id,
+              user_id: participantUserId,
               phone_number: userInfo.email,
               room_name: currentRoomName,
               invitation_token: invitation?.unique_token
@@ -190,7 +193,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
             .from('survey_invitations')
             .update({ 
               responded_at: new Date().toISOString(),
-              user_id: currentUser.id 
+              user_id: participantUserId 
             })
             .eq('unique_token', invitation.unique_token);
         }
