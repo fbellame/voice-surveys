@@ -16,7 +16,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage?: "campaigns" | "answers" | "settings";
+  currentPage?: "campaigns" | "answers";
 }
 
 export function Layout({ children, currentPage }: LayoutProps) {
@@ -26,7 +26,6 @@ export function Layout({ children, currentPage }: LayoutProps) {
   const navigation = [
     { name: "Campaigns", href: "/campaigns", icon: BarChart3, current: currentPage === "campaigns" },
     { name: "Answers", href: "/answers", icon: MessageSquare, current: currentPage === "answers" },
-    { name: "Settings", href: "/settings", icon: Settings, current: currentPage === "settings" },
   ];
 
   return (
@@ -78,7 +77,6 @@ export function Layout({ children, currentPage }: LayoutProps) {
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
               <Button variant="outline" size="sm" onClick={signOut}>
-                <LogOut className="mr-2 h-4 w-4" />
                 Sign out
               </Button>
               <Avatar className="h-8 w-8">
