@@ -138,8 +138,8 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
           return;
         }
 
-        // Find the agent-created record (has s3_recording_url but no user_id)
-        const agentRecord = existingResponses?.find(r => r.s3_recording_url && !r.user_id);
+        // Find the agent-created record (null user_id and null invitation_token)
+        const agentRecord = existingResponses?.find(r => !r.user_id && !r.invitation_token);
         
         if (agentRecord) {
           // Update the agent-created record with user data
