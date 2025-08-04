@@ -146,23 +146,35 @@ export default function Analytics() {
         ...(responses?.map(resp => resp.user_id).filter(Boolean) || [])
       ])];
 
-      // Fetch user profiles only for users who have responded
+      // Fetch user profiles from the database for users who have responded
       let profiles: UserProfile[] = [];
       const respondedUserIds = (invitations || [])
         .filter(inv => inv.responded_at !== null)
         .map(inv => inv.user_id)
         .filter(Boolean);
       
-      console.log('Fetching profiles for responded user IDs:', respondedUserIds);
-      
-      // Only add profile data for users who have actually responded
-      if (respondedUserIds.includes('6e570d99-06d7-4d6a-94db-251b9c1118fc')) {
-        profiles.push({
-          user_id: '6e570d99-06d7-4d6a-94db-251b9c1118fc',
-          full_name: 'Farid Bellameche',
-          geography: 'Montreal',
-          occupation: 'AI strategist'
-        });
+      if (respondedUserIds.length > 0) {
+        try {
+          // Query the user_profiles table directly
+          const { data: profilesData, error: profilesError } = await supabase
+            .from('user_profiles' as any)
+            .select('user_id, full_name, geography, occupation')
+            .in('user_id', respondedUserIds);
+
+          if (profilesError) {
+            console.error('Error fetching user profiles:', profilesError);
+          } else if (profilesData) {
+            profiles = (profilesData as any[]).map(p => ({
+              user_id: p.user_id,
+              full_name: p.full_name,
+              geography: p.geography,
+              occupation: p.occupation
+            }));
+            console.log('Fetched profiles:', profiles);
+          }
+        } catch (err) {
+          console.error('Failed to fetch user profiles:', err);
+        }
       }
 
       // Merge data properly - only show profiles for invitations that have been responded to
@@ -173,15 +185,9 @@ export default function Analytics() {
         );
         
         // Only show profile data if THIS SPECIFIC invitation has been responded to
-        let profile = null;
-        if (invitation.responded_at !== null && invitation.user_id === '6e570d99-06d7-4d6a-94db-251b9c1118fc') {
-          profile = {
-            user_id: '6e570d99-06d7-4d6a-94db-251b9c1118fc',
-            full_name: 'Farid Bellameche',
-            geography: 'Montreal',
-            occupation: 'AI strategist'
-          };
-        }
+        const profile = invitation.responded_at !== null 
+          ? profiles.find(p => p.user_id === invitation.user_id)
+          : null;
         
         return {
           id: invitation.id,
