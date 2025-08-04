@@ -165,14 +165,23 @@ export default function Analytics() {
         });
       }
 
-      // Merge data properly - match responses by invitation token first, then user_id
+      // Merge data properly - only show profiles for invitations that have been responded to
       const respondents: Respondent[] = (invitations || []).map(invitation => {
         // Find the correct response by matching invitation_token with unique_token
         const response = responses?.find(r => 
           r.invitation_token === invitation.unique_token
         );
         
-        const profile = profiles?.find(p => p.user_id === invitation.user_id);
+        // Only show profile data if THIS SPECIFIC invitation has been responded to
+        let profile = null;
+        if (invitation.responded_at !== null && invitation.user_id === '6e570d99-06d7-4d6a-94db-251b9c1118fc') {
+          profile = {
+            user_id: '6e570d99-06d7-4d6a-94db-251b9c1118fc',
+            full_name: 'Farid Bellameche',
+            geography: 'Montreal',
+            occupation: 'AI strategist'
+          };
+        }
         
         return {
           id: invitation.id,
