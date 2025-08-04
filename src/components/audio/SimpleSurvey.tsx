@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mic, MicOff, User, Bot } from 'lucide-react';
+import { Mic, MicOff, User, Bot, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -60,6 +60,11 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     toggleMute,
     joinRoom,
     leaveRoom,
+    // New survey tracking
+    surveyProgress,
+    transcript,
+    getCurrentQuestion,
+    getProgressStats
   } = useLiveKit();
 
   // Find agent and user participants
@@ -328,6 +333,57 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
             Please wait while the voice assistant speaks...
           </p>
         </div>
+
+        {/* Survey Progress */}
+        {surveyProgress.totalQuestions > 0 && (
+          <div className="space-y-4">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold mb-2">Survey Progress</h3>
+              <p className="text-sm text-muted-foreground">
+                {getProgressStats().completed} of {getProgressStats().total} questions answered ({getProgressStats().percentage}%)
+              </p>
+            </div>
+            
+            {/* Current Question */}
+            {getCurrentQuestion().text && (
+              <div className="bg-secondary/30 rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-primary">
+                    Question {getCurrentQuestion().number}:
+                  </span>
+                  {getCurrentQuestion().isAnswered && (
+                    <div className="h-5 w-5 bg-green-500 rounded-full flex items-center justify-center">
+                      <Check className="h-3 w-3 text-white" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm">
+                  {getCurrentQuestion().text && getCurrentQuestion().text.length > 100 
+                    ? `${getCurrentQuestion().text.substring(0, 100)}...` 
+                    : getCurrentQuestion().text}
+                </p>
+                {surveyProgress.lastAnswer && (
+                  <div className="mt-2 pt-2 border-t border-border/50">
+                    <span className="text-xs font-medium text-muted-foreground">Last Answer:</span>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {surveyProgress.lastAnswer.length > 80 
+                        ? `${surveyProgress.lastAnswer.substring(0, 80)}...` 
+                        : surveyProgress.lastAnswer}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Progress Bar */}
+            <div className="bg-secondary/30 rounded-full h-2 overflow-hidden">
+              <div 
+                className="h-full bg-green-500 transition-all duration-500"
+                style={{ width: `${getProgressStats().percentage}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Speaking Indicators */}
         <div className="grid grid-cols-2 gap-6">
