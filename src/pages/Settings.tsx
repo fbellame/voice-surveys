@@ -16,7 +16,7 @@ import {
 
 export default function Settings() {
   return (
-    <Layout currentPage="settings">
+    <Layout>
       <div className="space-y-8">
         {/* Header */}
         <div>
