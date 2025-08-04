@@ -11,6 +11,7 @@ import Campaigns from "./pages/Campaigns";
 import EditCampaign from "./pages/EditCampaign";
 import CreateCampaign from "./pages/CreateCampaign";
 import Answers from "./pages/Answers";
+import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -72,6 +73,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <Answers />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/analytics" 
+            element={
+              <ProtectedRoute>
+                <Analytics />
               </ProtectedRoute>
             } 
           />

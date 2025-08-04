@@ -9,14 +9,15 @@ import {
   LogOut,
   Menu,
   X,
-  MessageSquare
+  MessageSquare,
+  TrendingUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentPage?: "campaigns" | "answers";
+  currentPage?: "campaigns" | "answers" | "analytics";
 }
 
 export function Layout({ children, currentPage }: LayoutProps) {
@@ -26,6 +27,7 @@ export function Layout({ children, currentPage }: LayoutProps) {
   const navigation = [
     { name: "Campaigns", href: "/campaigns", icon: BarChart3, current: currentPage === "campaigns" },
     { name: "Answers", href: "/answers", icon: MessageSquare, current: currentPage === "answers" },
+    { name: "Analytics", href: "/analytics", icon: TrendingUp, current: currentPage === "analytics" },
   ];
 
   return (
