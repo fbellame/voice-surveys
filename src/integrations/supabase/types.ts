@@ -74,6 +74,7 @@ export type Database = {
           purpose_explanation: string | null
           start_date: string | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           campaign_type?: string
@@ -89,6 +90,7 @@ export type Database = {
           purpose_explanation?: string | null
           start_date?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           campaign_type?: string
@@ -104,6 +106,7 @@ export type Database = {
           purpose_explanation?: string | null
           start_date?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
