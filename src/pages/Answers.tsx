@@ -111,12 +111,9 @@ export default function Answers() {
       const { data: responsesData, error: responsesError } = await responsesQuery;
       
       if (responsesError) throw responsesError;
-      
-      console.log("Survey responses data:", responsesData);
 
       // Fetch all answers with questions for these responses
       const responseIds = responsesData?.map(r => r.id) || [];
-      console.log("Response IDs:", responseIds);
       
       let answersData: any[] = [];
       if (responseIds.length > 0) {
@@ -137,7 +134,6 @@ export default function Answers() {
 
         if (answersError) throw answersError;
         answersData = fetchedAnswers || [];
-        console.log("Answers data:", answersData);
       }
 
       // Transform data to match our interface
