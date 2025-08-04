@@ -123,9 +123,24 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     await leaveRoom();
     setSurveyActive(false);
     
-    // Find and update agent-created survey response instead of creating a new one
+    // Save user profile and survey response data
     if (currentUser && campaign && currentRoomName) {
       try {
+        // Save user profile information
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .upsert({
+            user_id: currentUser.id,
+            full_name: userInfo.fullName,
+            geography: userInfo.location,
+            occupation: userInfo.activity,
+            updated_at: new Date().toISOString()
+          });
+
+        if (profileError) {
+          console.error('Error saving user profile:', profileError);
+        }
+
         // Get all survey responses for this room and campaign
         const { data: existingResponses, error: fetchError } = await supabase
           .from('survey_response')
