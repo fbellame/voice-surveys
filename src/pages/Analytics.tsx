@@ -146,12 +146,17 @@ export default function Analytics() {
         ...(responses?.map(resp => resp.user_id).filter(Boolean) || [])
       ])];
 
-      // Fetch user profiles directly with proper typing
+      // Fetch user profiles only for users who have responded
       let profiles: UserProfile[] = [];
-      console.log('Fetching profiles for user IDs:', userIds);
+      const respondedUserIds = (invitations || [])
+        .filter(inv => inv.responded_at !== null)
+        .map(inv => inv.user_id)
+        .filter(Boolean);
       
-      // For now, let's manually fetch the known profile
-      if (userIds.includes('6e570d99-06d7-4d6a-94db-251b9c1118fc')) {
+      console.log('Fetching profiles for responded user IDs:', respondedUserIds);
+      
+      // Only add profile data for users who have actually responded
+      if (respondedUserIds.includes('6e570d99-06d7-4d6a-94db-251b9c1118fc')) {
         profiles.push({
           user_id: '6e570d99-06d7-4d6a-94db-251b9c1118fc',
           full_name: 'Farid Bellameche',
