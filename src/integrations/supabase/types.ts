@@ -74,6 +74,7 @@ export type Database = {
           purpose_explanation: string | null
           start_date: string | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           campaign_type?: string
@@ -89,6 +90,7 @@ export type Database = {
           purpose_explanation?: string | null
           start_date?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           campaign_type?: string
@@ -104,6 +106,7 @@ export type Database = {
           purpose_explanation?: string | null
           start_date?: string | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -277,6 +280,36 @@ export type Database = {
             referencedColumns: ["unique_token"]
           },
         ]
+      }
+      user_profiles: {
+        Row: {
+          created_at: string
+          full_name: string | null
+          geography: string | null
+          id: string
+          occupation: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          full_name?: string | null
+          geography?: string | null
+          id?: string
+          occupation?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string | null
+          geography?: string | null
+          id?: string
+          occupation?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
