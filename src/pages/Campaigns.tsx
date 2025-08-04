@@ -47,8 +47,17 @@ export default function Campaigns() {
 
   useEffect(() => {
     const fetchCampaigns = async () => {
+      console.log("fetchCampaigns called, user:", user);
+      console.log("User ID:", user?.id);
+      
+      if (!user?.id) {
+        console.log("No user ID available, skipping fetch");
+        setLoading(false);
+        return;
+      }
+      
       try {
-        console.log("Current user ID:", user?.id);
+        console.log("Starting campaigns fetch...");
         
         // Fetch campaigns with their related data
         const { data: campaignsData, error: campaignsError } = await supabase
@@ -57,6 +66,7 @@ export default function Campaigns() {
           .eq('user_id', user?.id);
 
         console.log("Campaigns query result:", campaignsData);
+        console.log("Campaigns query error:", campaignsError);
         if (campaignsError) throw campaignsError;
 
         // Fetch call counts per campaign
@@ -124,10 +134,9 @@ export default function Campaigns() {
       }
     };
 
-    if (user?.id) {
-      fetchCampaigns();
-    }
-  }, [user?.id]);
+    
+    fetchCampaigns();
+  }, [user]);
 
   const handleDeleteCampaign = async (campaignId: number, campaignName: string) => {
     try {
