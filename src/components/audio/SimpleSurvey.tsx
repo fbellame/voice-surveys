@@ -35,6 +35,7 @@ interface SimpleSurveyProps {
 export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyProps) {
   const [surveyActive, setSurveyActive] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
+  const [currentRoomName, setCurrentRoomName] = useState<string>('');
   const [userInfo, setUserInfo] = useState({
     fullName: '',
     location: '',
@@ -102,6 +103,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
       
       const token = await generateToken(roomName, userName);
       await joinRoom(roomName, userName, token);
+      setCurrentRoomName(roomName);
       setSurveyActive(true);
       
       toast({
@@ -121,18 +123,38 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     await leaveRoom();
     setSurveyActive(false);
     
-    // Save survey response with user_id
-    if (currentUser && campaign) {
+    // Update existing survey response instead of creating a new one
+    if (currentUser && campaign && currentRoomName) {
       try {
-        await supabase
+        // First, check if there's already a survey response for this room
+        const { data: existingResponse } = await supabase
           .from('survey_response')
-          .insert({
-            campaign_id: campaign.id,
-            user_id: currentUser.id,
-            phone_number: userInfo.email, // Using email as identifier
-            room_name: `survey-${Date.now()}`,
-            invitation_token: invitation?.unique_token
-          });
+          .select('id')
+          .eq('room_name', currentRoomName)
+          .maybeSingle();
+
+        if (existingResponse) {
+          // Update the existing response with user info and token
+          await supabase
+            .from('survey_response')
+            .update({
+              user_id: currentUser.id,
+              phone_number: userInfo.email,
+              invitation_token: invitation?.unique_token
+            })
+            .eq('id', existingResponse.id);
+        } else {
+          // Create new response if none exists
+          await supabase
+            .from('survey_response')
+            .insert({
+              campaign_id: campaign.id,
+              user_id: currentUser.id,
+              phone_number: userInfo.email,
+              room_name: currentRoomName,
+              invitation_token: invitation?.unique_token
+            });
+        }
 
         // Update invitation status if this was from an invitation
         if (invitation) {
