@@ -12,6 +12,7 @@ import {
   MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -20,6 +21,7 @@ interface LayoutProps {
 
 export function Layout({ children, currentPage }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { signOut } = useAuth();
 
   const navigation = [
     { name: "Campaigns", href: "/campaigns", icon: BarChart3, current: currentPage === "campaigns" },
@@ -75,7 +77,7 @@ export function Layout({ children, currentPage }: LayoutProps) {
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1" />
             <div className="flex items-center gap-x-4 lg:gap-x-6">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={signOut}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Sign out
               </Button>
