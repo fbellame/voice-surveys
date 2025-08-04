@@ -123,28 +123,41 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     await leaveRoom();
     setSurveyActive(false);
     
-    // Update existing survey response instead of creating a new one
+    // Find and update agent-created survey response instead of creating a new one
     if (currentUser && campaign && currentRoomName) {
       try {
-        // First, check if there's already a survey response for this room
-        const { data: existingResponse } = await supabase
+        // Get all survey responses for this room and campaign
+        const { data: existingResponses, error: fetchError } = await supabase
           .from('survey_response')
-          .select('id')
+          .select('*')
           .eq('room_name', currentRoomName)
-          .maybeSingle();
+          .eq('campaign_id', campaign.id);
 
-        if (existingResponse) {
-          // Update the existing response with user info and token
-          await supabase
+        if (fetchError) {
+          console.error('Error fetching survey responses:', fetchError);
+          return;
+        }
+
+        // Find the agent-created record (has s3_recording_url but no user_id)
+        const agentRecord = existingResponses?.find(r => r.s3_recording_url && !r.user_id);
+        
+        if (agentRecord) {
+          // Update the agent-created record with user data
+          const { error: updateError } = await supabase
             .from('survey_response')
             .update({
               user_id: currentUser.id,
               phone_number: userInfo.email,
-              invitation_token: invitation?.unique_token
+              invitation_token: invitation?.unique_token,
+              updated_at: new Date().toISOString()
             })
-            .eq('id', existingResponse.id);
+            .eq('id', agentRecord.id);
+
+          if (updateError) {
+            console.error('Error updating agent survey response:', updateError);
+          }
         } else {
-          // Create new response if none exists
+          // No agent record found, create new response
           await supabase
             .from('survey_response')
             .insert({
