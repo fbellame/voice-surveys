@@ -123,9 +123,20 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     await leaveRoom();
     setSurveyActive(false);
     
-    // Simple approach: save everything to survey_submissions table
+    // Check if submission already exists and update it, otherwise create new one
     if (campaign && currentRoomName) {
       try {
+        // First check if a submission already exists for this room
+        const { data: existingSubmission, error: checkError } = await supabase
+          .from('survey_submissions')
+          .select('id')
+          .eq('room_name', currentRoomName)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error('Error checking existing submission:', checkError);
+        }
+
         const submissionData = {
           campaign_id: campaign.id,
           full_name: userInfo.fullName,
@@ -135,15 +146,32 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
           phone_number: userInfo.email, // Using email as phone_number for now
           room_name: currentRoomName,
           invitation_token: invitation?.unique_token || null,
+          updated_at: new Date().toISOString(),
         };
 
-        const { error: submissionError } = await supabase
-          .from('survey_submissions')
-          .insert(submissionData);
+        if (existingSubmission) {
+          // Update existing submission with user data
+          const { error: updateError } = await supabase
+            .from('survey_submissions')
+            .update(submissionData)
+            .eq('id', existingSubmission.id);
 
-        if (submissionError) {
-          console.error('Error saving survey submission:', submissionError);
-          throw submissionError;
+          if (updateError) {
+            console.error('Error updating survey submission:', updateError);
+            throw updateError;
+          }
+          console.log('Survey data updated successfully:', submissionData);
+        } else {
+          // Create new submission
+          const { error: insertError } = await supabase
+            .from('survey_submissions')
+            .insert(submissionData);
+
+          if (insertError) {
+            console.error('Error creating survey submission:', insertError);
+            throw insertError;
+          }
+          console.log('Survey data created successfully:', submissionData);
         }
 
         // If this was an invitation-based survey, mark it as responded
@@ -159,8 +187,6 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
             console.error('Error updating invitation:', invitationError);
           }
         }
-
-        console.log('Survey data saved successfully:', submissionData);
       } catch (error) {
         console.error('Error saving survey data:', error);
       }
