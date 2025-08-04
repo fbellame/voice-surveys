@@ -123,82 +123,46 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     await leaveRoom();
     setSurveyActive(false);
     
-    // Save user profile and survey response data
+    // Simple approach: save everything to survey_submissions table
     if (campaign && currentRoomName) {
       try {
-        // Generate a unique user ID for this survey participant
-        const participantUserId = crypto.randomUUID();
-        
-        // Save user profile information for the survey participant
-        const { error: profileError } = await supabase
-          .from('user_profiles')
-          .insert({
-            user_id: participantUserId,
-            full_name: userInfo.fullName,
-            geography: userInfo.location,
-            occupation: userInfo.activity,
-            updated_at: new Date().toISOString()
-          });
+        const submissionData = {
+          campaign_id: campaign.id,
+          full_name: userInfo.fullName,
+          email: userInfo.email,
+          geography: userInfo.location,
+          occupation: userInfo.activity,
+          phone_number: userInfo.email, // Using email as phone_number for now
+          room_name: currentRoomName,
+          invitation_token: invitation?.unique_token || null,
+        };
 
-        if (profileError) {
-          console.error('Error saving user profile:', profileError);
+        const { error: submissionError } = await supabase
+          .from('survey_submissions')
+          .insert(submissionData);
+
+        if (submissionError) {
+          console.error('Error saving survey submission:', submissionError);
+          throw submissionError;
         }
 
-        // Get all survey responses for this room and campaign
-        const { data: existingResponses, error: fetchError } = await supabase
-          .from('survey_response')
-          .select('*')
-          .eq('room_name', currentRoomName)
-          .eq('campaign_id', campaign.id);
-
-        if (fetchError) {
-          console.error('Error fetching survey responses:', fetchError);
-          return;
-        }
-
-        // Find the agent-created record (null user_id and null invitation_token)
-        const agentRecord = existingResponses?.find(r => !r.user_id && !r.invitation_token);
-        
-        if (agentRecord) {
-          // Update the agent-created record with user data
-          const { error: updateError } = await supabase
-            .from('survey_response')
-            .update({
-              user_id: participantUserId,
-              phone_number: userInfo.email,
-              invitation_token: invitation?.unique_token,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', agentRecord.id);
-
-          if (updateError) {
-            console.error('Error updating agent survey response:', updateError);
-          }
-        } else {
-          // No agent record found, create new response
-          await supabase
-            .from('survey_response')
-            .insert({
-              campaign_id: campaign.id,
-              user_id: participantUserId,
-              phone_number: userInfo.email,
-              room_name: currentRoomName,
-              invitation_token: invitation?.unique_token
-            });
-        }
-
-        // Update invitation status if this was from an invitation
+        // If this was an invitation-based survey, mark it as responded
         if (invitation) {
-          await supabase
+          const { error: invitationError } = await supabase
             .from('survey_invitations')
-            .update({ 
+            .update({
               responded_at: new Date().toISOString(),
-              user_id: participantUserId 
             })
             .eq('unique_token', invitation.unique_token);
+
+          if (invitationError) {
+            console.error('Error updating invitation:', invitationError);
+          }
         }
+
+        console.log('Survey data saved successfully:', submissionData);
       } catch (error) {
-        console.error('Error saving survey response:', error);
+        console.error('Error saving survey data:', error);
       }
     }
     

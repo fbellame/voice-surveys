@@ -281,6 +281,54 @@ export type Database = {
           },
         ]
       }
+      survey_submissions: {
+        Row: {
+          call_timestamp: string | null
+          campaign_id: number
+          created_at: string | null
+          email: string | null
+          full_name: string | null
+          geography: string | null
+          id: string
+          invitation_token: string | null
+          occupation: string | null
+          phone_number: string | null
+          room_name: string
+          s3_recording_url: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          call_timestamp?: string | null
+          campaign_id: number
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          geography?: string | null
+          id?: string
+          invitation_token?: string | null
+          occupation?: string | null
+          phone_number?: string | null
+          room_name: string
+          s3_recording_url?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          call_timestamp?: string | null
+          campaign_id?: number
+          created_at?: string | null
+          email?: string | null
+          full_name?: string | null
+          geography?: string | null
+          id?: string
+          invitation_token?: string | null
+          occupation?: string | null
+          phone_number?: string | null
+          room_name?: string
+          s3_recording_url?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       user_profiles: {
         Row: {
           created_at: string
