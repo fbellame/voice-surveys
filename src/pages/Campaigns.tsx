@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
+import { useAuth } from "@/hooks/useAuth";
 import { StatsCard } from "@/components/StatsCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,7 @@ interface CampaignWithStats {
 export default function Campaigns() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<CampaignWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCampaignForInvitations, setSelectedCampaignForInvitations] = useState<CampaignWithStats | null>(null);
@@ -49,7 +51,8 @@ export default function Campaigns() {
         // Fetch campaigns with their related data
         const { data: campaignsData, error: campaignsError } = await supabase
           .from('campaign')
-          .select('*');
+          .select('*')
+          .eq('user_id', user?.id);
 
         if (campaignsError) throw campaignsError;
 
@@ -118,8 +121,10 @@ export default function Campaigns() {
       }
     };
 
-    fetchCampaigns();
-  }, []);
+    if (user?.id) {
+      fetchCampaigns();
+    }
+  }, [user?.id]);
 
   const handleDeleteCampaign = async (campaignId: number, campaignName: string) => {
     try {

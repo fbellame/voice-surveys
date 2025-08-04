@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 export default function CreateCampaign() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   
   // Campaign form state
@@ -77,7 +79,7 @@ export default function CreateCampaign() {
       const { room_pattern, ...campaignData } = campaignForm;
       const { data: campaign, error: campaignError } = await supabase
         .from('campaign')
-        .insert([campaignData])
+        .insert([{ ...campaignData, user_id: user?.id }])
         .select()
         .single();
 
