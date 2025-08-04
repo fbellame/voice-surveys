@@ -68,8 +68,8 @@ export default function Answers() {
       if (campaignsError) throw campaignsError;
       setCampaigns(campaignsData || []);
 
-      // Build query for survey responses with filters
-      let query = supabase
+      // Fetch survey responses first
+      let responsesQuery = supabase
         .from('survey_response')
         .select(`
           id,
@@ -77,27 +77,13 @@ export default function Answers() {
           room_name,
           call_timestamp,
           s3_recording_url,
-          campaign:campaign_id (
-            id,
-            name,
-            campaign_type
-          ),
-          answer (
-            id,
-            answer_text,
-            answered_at,
-            question_id,
-            question:question_id (
-              question_text,
-              question_order
-            )
-          )
+          campaign_id
         `)
         .order('call_timestamp', { ascending: false });
 
       // Apply campaign filter
       if (selectedCampaign !== "all") {
-        query = query.eq('campaign_id', parseInt(selectedCampaign));
+        responsesQuery = responsesQuery.eq('campaign_id', parseInt(selectedCampaign));
       }
 
       // Apply time filter
@@ -119,23 +105,58 @@ export default function Answers() {
             dateLimit = new Date(0);
         }
         
-        query = query.gte('call_timestamp', dateLimit.toISOString());
+        responsesQuery = responsesQuery.gte('call_timestamp', dateLimit.toISOString());
       }
 
-      const { data: responsesData, error: responsesError } = await query;
+      const { data: responsesData, error: responsesError } = await responsesQuery;
       
       if (responsesError) throw responsesError;
+
+      // Fetch all answers with questions for these responses
+      const responseIds = responsesData?.map(r => r.id) || [];
       
+      let answersData: any[] = [];
+      if (responseIds.length > 0) {
+        const { data: fetchedAnswers, error: answersError } = await supabase
+          .from('answer')
+          .select(`
+            id,
+            answer_text,
+            answered_at,
+            question_id,
+            survey_response_id,
+            question:question_id (
+              question_text,
+              question_order
+            )
+          `)
+          .in('survey_response_id', responseIds);
+
+        if (answersError) throw answersError;
+        answersData = fetchedAnswers || [];
+      }
+
       // Transform data to match our interface
-      const transformedData: SurveyResponse[] = responsesData?.map(response => ({
-        id: response.id,
-        phone_number: response.phone_number,
-        room_name: response.room_name,
-        call_timestamp: response.call_timestamp,
-        s3_recording_url: response.s3_recording_url,
-        campaign: response.campaign as SurveyResponse['campaign'],
-        answers: (response.answer as Answer[])?.sort((a, b) => a.question.question_order - b.question.question_order) || []
-      })) || [];
+      const transformedData: SurveyResponse[] = responsesData?.map(response => {
+        const campaign = campaignsData?.find(c => c.id === response.campaign_id);
+        const responseAnswers = answersData
+          .filter(a => a.survey_response_id === response.id)
+          .sort((a, b) => a.question.question_order - b.question.question_order);
+
+        return {
+          id: response.id,
+          phone_number: response.phone_number,
+          room_name: response.room_name,
+          call_timestamp: response.call_timestamp,
+          s3_recording_url: response.s3_recording_url,
+          campaign: {
+            id: campaign?.id || response.campaign_id,
+            name: campaign?.name || 'Unknown Campaign',
+            campaign_type: campaign?.campaign_type || 'unknown'
+          },
+          answers: responseAnswers
+        };
+      }) || [];
 
       setSurveyResponses(transformedData);
 
