@@ -12,7 +12,7 @@ import { Download, Filter, Search, Play, ChevronDown, ChevronRight, ExternalLink
 import { format } from "date-fns";
 
 interface SurveyResponse {
-  id: number;
+  id: string;
   phone_number: string;
   room_name: string;
   call_timestamp: string;
@@ -50,7 +50,7 @@ export default function Answers() {
   const [selectedCampaign, setSelectedCampaign] = useState<string>("all");
   const [timeFilter, setTimeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchData();
@@ -68,9 +68,9 @@ export default function Answers() {
       if (campaignsError) throw campaignsError;
       setCampaigns(campaignsData || []);
 
-      // Fetch survey responses first
-      let responsesQuery = supabase
-        .from('survey_response')
+      // Fetch survey submissions first
+      let submissionsQuery = supabase
+        .from('survey_submissions' as any)
         .select(`
           id,
           phone_number,
@@ -83,7 +83,7 @@ export default function Answers() {
 
       // Apply campaign filter
       if (selectedCampaign !== "all") {
-        responsesQuery = responsesQuery.eq('campaign_id', parseInt(selectedCampaign));
+        submissionsQuery = submissionsQuery.eq('campaign_id', parseInt(selectedCampaign));
       }
 
       // Apply time filter
@@ -105,56 +105,56 @@ export default function Answers() {
             dateLimit = new Date(0);
         }
         
-        responsesQuery = responsesQuery.gte('call_timestamp', dateLimit.toISOString());
+        submissionsQuery = submissionsQuery.gte('call_timestamp', dateLimit.toISOString());
       }
 
-      const { data: responsesData, error: responsesError } = await responsesQuery;
+      const { data: submissionsData, error: submissionsError } = await submissionsQuery;
       
-      if (responsesError) throw responsesError;
+      if (submissionsError) throw submissionsError;
 
-      // Fetch all answers with questions for these responses
-      const responseIds = responsesData?.map(r => r.id) || [];
+      // Fetch all answers with questions for these submissions
+      const submissionIds = (submissionsData as any)?.map((s: any) => s.id) || [];
       
       let answersData: any[] = [];
-      if (responseIds.length > 0) {
-        const { data: fetchedAnswers, error: answersError } = await supabase
+      if (submissionIds.length > 0) {
+        const { data: fetchedAnswers, error: answersError } = await (supabase as any)
           .from('answer')
           .select(`
             id,
             answer_text,
             answered_at,
             question_id,
-            survey_response_id,
+            survey_submission_id,
             question:question_id (
               question_text,
               question_order
             )
           `)
-          .in('survey_response_id', responseIds);
+          .in('survey_submission_id', submissionIds);
 
         if (answersError) throw answersError;
         answersData = fetchedAnswers || [];
       }
 
       // Transform data to match our interface
-      const transformedData: SurveyResponse[] = responsesData?.map(response => {
-        const campaign = campaignsData?.find(c => c.id === response.campaign_id);
-        const responseAnswers = answersData
-          .filter(a => a.survey_response_id === response.id)
+      const transformedData: SurveyResponse[] = (submissionsData as any)?.map((submission: any) => {
+        const campaign = campaignsData?.find(c => c.id === submission.campaign_id);
+        const submissionAnswers = answersData
+          .filter(a => a.survey_submission_id === submission.id)
           .sort((a, b) => a.question.question_order - b.question.question_order);
 
         return {
-          id: response.id,
-          phone_number: response.phone_number,
-          room_name: response.room_name,
-          call_timestamp: response.call_timestamp,
-          s3_recording_url: response.s3_recording_url,
+          id: submission.id,
+          phone_number: submission.phone_number,
+          room_name: submission.room_name,
+          call_timestamp: submission.call_timestamp,
+          s3_recording_url: submission.s3_recording_url,
           campaign: {
-            id: campaign?.id || response.campaign_id,
+            id: campaign?.id || submission.campaign_id,
             name: campaign?.name || 'Unknown Campaign',
             campaign_type: campaign?.campaign_type || 'unknown'
           },
-          answers: responseAnswers
+          answers: submissionAnswers
         };
       }) || [];
 
@@ -187,7 +187,7 @@ export default function Answers() {
     );
   });
 
-  const toggleExpanded = (responseId: number) => {
+  const toggleExpanded = (responseId: string) => {
     const newExpanded = new Set(expandedRows);
     if (newExpanded.has(responseId)) {
       newExpanded.delete(responseId);

@@ -62,7 +62,7 @@ export default function Campaigns() {
 
         // Fetch call counts per campaign
         const { data: callCounts, error: callError } = await supabase
-          .from('survey_response')
+          .from('survey_submissions' as any)
           .select('campaign_id');
 
         if (callError) throw callError;
@@ -77,17 +77,17 @@ export default function Campaigns() {
         // Fetch answer counts per campaign (via calls)
         const { data: answerCounts, error: answerError } = await supabase
           .from('answer')
-          .select('survey_response_id, survey_response!inner(campaign_id)');
+          .select('survey_submission_id, survey_submissions!inner(campaign_id)' as any);
 
         if (answerError) throw answerError;
 
         // Process the data
         const campaignsWithStats: CampaignWithStats[] = (campaignsData as any[]).map(campaign => {
-          const callsForCampaign = callCounts.filter(call => call.campaign_id === campaign.id).length;
+          const callsForCampaign = (callCounts as any)?.filter((call: any) => call.campaign_id === campaign.id).length || 0;
           const questionsForCampaign = questionCounts.filter(q => q.campaign_id === campaign.id).length;
-          const responsesForCampaign = answerCounts.filter(
-            answer => answer.survey_response && answer.survey_response.campaign_id === campaign.id
-          ).length;
+          const responsesForCampaign = (answerCounts as any)?.filter(
+            (answer: any) => answer.survey_submissions && answer.survey_submissions.campaign_id === campaign.id
+          ).length || 0;
 
           // Determine status based on dates
           const now = new Date();
@@ -137,19 +137,19 @@ export default function Campaigns() {
         .delete()
         .eq('campaign_id', campaignId);
 
-      await supabase
+      await (supabase as any)
         .from('answer')
         .delete()
-        .in('survey_response_id', 
-          (await supabase
-            .from('survey_response')
+        .in('survey_submission_id', 
+          (await (supabase as any)
+            .from('survey_submissions')
             .select('id')
             .eq('campaign_id', campaignId)
-          ).data?.map(sr => sr.id) || []
+          ).data?.map((s: any) => s.id) || []
         );
 
       await supabase
-        .from('survey_response')
+        .from('survey_submissions' as any)
         .delete()
         .eq('campaign_id', campaignId);
 
