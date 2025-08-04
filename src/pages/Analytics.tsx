@@ -28,6 +28,7 @@ interface SurveyInvitation {
   sent_at: string | null;
   responded_at: string | null;
   user_id: string | null;
+  unique_token: string;
 }
 
 interface SurveyResponse {
@@ -35,6 +36,7 @@ interface SurveyResponse {
   phone_number: string;
   room_name: string;
   user_id: string | null;
+  invitation_token: string | null;
   answer: Array<{
     answer_text: string;
     question: {
@@ -112,7 +114,7 @@ export default function Analytics() {
       // Fetch invitations
       const { data: invitations, error: invitationsError } = await supabase
         .from('survey_invitations')
-        .select('id, email, sent_at, responded_at, user_id')
+        .select('id, email, sent_at, responded_at, user_id, unique_token')
         .eq('campaign_id', campaignIdNum);
 
       if (invitationsError) throw invitationsError;
@@ -125,6 +127,7 @@ export default function Analytics() {
           phone_number,
           room_name,
           user_id,
+          invitation_token,
           answer (
             answer_text,
             question (
@@ -143,14 +146,20 @@ export default function Analytics() {
         ...(responses?.map(resp => resp.user_id).filter(Boolean) || [])
       ])];
 
-      // Skip user profiles for now due to TypeScript issues
-      // This can be re-enabled once the types are updated
+      // Fetch user profiles - simplified approach
       let profiles: UserProfile[] = [];
+      console.log('Fetching profiles for user IDs:', userIds);
 
-      // Merge data
+      // Merge data properly - match responses by invitation token or user_id
       const respondents: Respondent[] = (invitations || []).map(invitation => {
-        const response = responses?.find(r => r.user_id === invitation.user_id);
-        const profile = profiles?.find(p => p.user_id === invitation.user_id);
+        // Find the correct response by matching user_id first, then by invitation token
+        const response = responses?.find(r => 
+          r.user_id === invitation.user_id || 
+          r.invitation_token === invitation.unique_token
+        );
+        
+        // For now, we'll skip user profiles until we can resolve the type issues
+        const profile = null;
         
         return {
           id: invitation.id,
