@@ -19,42 +19,42 @@ export type Database = {
           answer_text: string
           answered_at: string | null
           created_at: string | null
-          id: number
+          id: string
           question_id: number
-          survey_response_id: number
+          survey_submission_id: string
           updated_at: string | null
         }
         Insert: {
           answer_text: string
           answered_at?: string | null
           created_at?: string | null
-          id?: number
+          id?: string
           question_id: number
-          survey_response_id: number
+          survey_submission_id: string
           updated_at?: string | null
         }
         Update: {
           answer_text?: string
           answered_at?: string | null
           created_at?: string | null
-          id?: number
+          id?: string
           question_id?: number
-          survey_response_id?: number
+          survey_submission_id?: string
           updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "answer_call_id_fkey"
-            columns: ["survey_response_id"]
-            isOneToOne: false
-            referencedRelation: "survey_response"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "answer_question_id_fkey"
             columns: ["question_id"]
             isOneToOne: false
             referencedRelation: "question"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answer_survey_submission_id_fkey"
+            columns: ["survey_submission_id"]
+            isOneToOne: false
+            referencedRelation: "survey_submissions"
             referencedColumns: ["id"]
           },
         ]
@@ -227,60 +227,6 @@ export type Database = {
           },
         ]
       }
-      survey_response: {
-        Row: {
-          call_timestamp: string | null
-          campaign_id: number
-          created_at: string | null
-          id: number
-          invitation_token: string | null
-          phone_number: string
-          room_name: string
-          s3_recording_url: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Insert: {
-          call_timestamp?: string | null
-          campaign_id: number
-          created_at?: string | null
-          id?: number
-          invitation_token?: string | null
-          phone_number: string
-          room_name: string
-          s3_recording_url?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          call_timestamp?: string | null
-          campaign_id?: number
-          created_at?: string | null
-          id?: number
-          invitation_token?: string | null
-          phone_number?: string
-          room_name?: string
-          s3_recording_url?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "call_campaign_id_fkey"
-            columns: ["campaign_id"]
-            isOneToOne: false
-            referencedRelation: "campaign"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "survey_response_invitation_token_fkey"
-            columns: ["invitation_token"]
-            isOneToOne: false
-            referencedRelation: "survey_invitations"
-            referencedColumns: ["unique_token"]
-          },
-        ]
-      }
       survey_submissions: {
         Row: {
           call_timestamp: string | null
@@ -326,36 +272,6 @@ export type Database = {
           room_name?: string
           s3_recording_url?: string | null
           updated_at?: string | null
-        }
-        Relationships: []
-      }
-      user_profiles: {
-        Row: {
-          created_at: string
-          full_name: string | null
-          geography: string | null
-          id: string
-          occupation: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          full_name?: string | null
-          geography?: string | null
-          id?: string
-          occupation?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          full_name?: string | null
-          geography?: string | null
-          id?: string
-          occupation?: string | null
-          updated_at?: string
-          user_id?: string
         }
         Relationships: []
       }
