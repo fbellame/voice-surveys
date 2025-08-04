@@ -48,12 +48,15 @@ export default function Campaigns() {
   useEffect(() => {
     const fetchCampaigns = async () => {
       try {
+        console.log("Current user ID:", user?.id);
+        
         // Fetch campaigns with their related data
         const { data: campaignsData, error: campaignsError } = await supabase
           .from('campaign')
           .select('*')
           .eq('user_id', user?.id);
 
+        console.log("Campaigns query result:", campaignsData);
         if (campaignsError) throw campaignsError;
 
         // Fetch call counts per campaign
