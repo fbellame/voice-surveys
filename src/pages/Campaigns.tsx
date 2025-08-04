@@ -19,7 +19,6 @@ import {
   Play,
   Pause,
   Calendar,
-  Share2,
   Link
 } from "lucide-react";
 import { SurveyInvitations } from "@/components/SurveyInvitations";
@@ -184,32 +183,6 @@ export default function Campaigns() {
     }
   };
 
-  const handleShareCampaign = async (campaign: CampaignWithStats) => {
-    if (!campaign.campaign_uri) {
-      toast({
-        title: "No survey URL",
-        description: "This campaign doesn't have a URI configured.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const surveyUrl = `https://survey.generative-ai.ca/${campaign.campaign_uri}`;
-    
-    try {
-      await navigator.clipboard.writeText(surveyUrl);
-      toast({
-        title: "Survey URL copied!",
-        description: "The survey link has been copied to your clipboard.",
-      });
-    } catch (error) {
-      toast({
-        title: "Failed to copy",
-        description: "Please copy the URL manually: " + surveyUrl,
-        variant: "destructive",
-      });
-    }
-  };
 
   const totalCampaigns = campaigns.length;
   const activeCampaigns = campaigns.filter(c => c.status === "active").length;
@@ -316,15 +289,6 @@ export default function Campaigns() {
                       disabled={!campaign.campaign_uri}
                     >
                       <Link className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="hover:bg-accent"
-                      onClick={() => handleShareCampaign(campaign)}
-                      disabled={!campaign.campaign_uri}
-                    >
-                      <Share2 className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="outline"
