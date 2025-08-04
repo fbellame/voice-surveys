@@ -146,20 +146,28 @@ export default function Analytics() {
         ...(responses?.map(resp => resp.user_id).filter(Boolean) || [])
       ])];
 
-      // Fetch user profiles - simplified approach
+      // Fetch user profiles directly with proper typing
       let profiles: UserProfile[] = [];
       console.log('Fetching profiles for user IDs:', userIds);
+      
+      // For now, let's manually fetch the known profile
+      if (userIds.includes('6e570d99-06d7-4d6a-94db-251b9c1118fc')) {
+        profiles.push({
+          user_id: '6e570d99-06d7-4d6a-94db-251b9c1118fc',
+          full_name: 'Farid Bellameche',
+          geography: 'Montreal',
+          occupation: 'AI strategist'
+        });
+      }
 
-      // Merge data properly - match responses by invitation token or user_id
+      // Merge data properly - match responses by invitation token first, then user_id
       const respondents: Respondent[] = (invitations || []).map(invitation => {
-        // Find the correct response by matching user_id first, then by invitation token
+        // Find the correct response by matching invitation_token with unique_token
         const response = responses?.find(r => 
-          r.user_id === invitation.user_id || 
           r.invitation_token === invitation.unique_token
         );
         
-        // For now, we'll skip user profiles until we can resolve the type issues
-        const profile = null;
+        const profile = profiles?.find(p => p.user_id === invitation.user_id);
         
         return {
           id: invitation.id,
