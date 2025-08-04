@@ -119,15 +119,18 @@ export default function Analytics() {
 
       if (invitationsError) throw invitationsError;
 
-      // Fetch survey responses with answers
-      const { data: responses, error: responsesError } = await supabase
-        .from('survey_response')
+      // Fetch survey submissions with answers
+      const { data: submissions, error: submissionsError } = await supabase
+        .from('survey_submissions' as any)
         .select(`
           id,
           phone_number,
           room_name,
-          user_id,
           invitation_token,
+          full_name,
+          email,
+          geography,
+          occupation,
           answer (
             answer_text,
             question (
@@ -138,72 +141,30 @@ export default function Analytics() {
         `)
         .eq('campaign_id', campaignIdNum);
 
-      if (responsesError) throw responsesError;
+      if (submissionsError) throw submissionsError;
 
-      // Get unique user IDs
-      const userIds = [...new Set([
-        ...(invitations?.map(inv => inv.user_id).filter(Boolean) || []),
-        ...(responses?.map(resp => resp.user_id).filter(Boolean) || [])
-      ])];
-
-      // Fetch user profiles from the database for users who have responded
-      let profiles: UserProfile[] = [];
-      const respondedUserIds = (invitations || [])
-        .filter(inv => inv.responded_at !== null)
-        .map(inv => inv.user_id)
-        .filter(Boolean);
-      
-      if (respondedUserIds.length > 0) {
-        try {
-          // Query the user_profiles table directly
-          const { data: profilesData, error: profilesError } = await supabase
-            .from('user_profiles' as any)
-            .select('user_id, full_name, geography, occupation')
-            .in('user_id', respondedUserIds);
-
-          if (profilesError) {
-            console.error('Error fetching user profiles:', profilesError);
-          } else if (profilesData) {
-            profiles = (profilesData as any[]).map(p => ({
-              user_id: p.user_id,
-              full_name: p.full_name,
-              geography: p.geography,
-              occupation: p.occupation
-            }));
-            console.log('Fetched profiles:', profiles);
-          }
-        } catch (err) {
-          console.error('Failed to fetch user profiles:', err);
-        }
-      }
-
-      // Merge data properly - only show profiles for invitations that have been responded to
+      // Merge data properly - only show data for invitations that have been responded to
       const respondents: Respondent[] = (invitations || []).map(invitation => {
-        // Find the correct response by matching invitation_token with unique_token
-        const response = responses?.find(r => 
-          r.invitation_token === invitation.unique_token
+        // Find the correct submission by matching invitation_token with unique_token
+        const submission = (submissions as any)?.find((s: any) => 
+          s.invitation_token === invitation.unique_token
         );
-        
-        // Only show profile data if THIS SPECIFIC invitation has been responded to
-        const profile = invitation.responded_at !== null 
-          ? profiles.find(p => p.user_id === invitation.user_id)
-          : null;
         
         return {
           id: invitation.id,
           email: invitation.email,
-          fullName: profile?.full_name || null,
-          geography: profile?.geography || null,
-          occupation: profile?.occupation || null,
+          fullName: submission?.full_name || null,
+          geography: submission?.geography || null,
+          occupation: submission?.occupation || null,
           sentAt: invitation.sent_at,
           respondedAt: invitation.responded_at,
-          phoneNumber: response?.phone_number || '',
-          roomName: response?.room_name || '',
-          answers: response?.answer?.map(a => ({
+          phoneNumber: submission?.phone_number || '',
+          roomName: submission?.room_name || '',
+          answers: submission?.answer?.map((a: any) => ({
             questionText: a.question.question_text,
             answerText: a.answer_text,
             questionOrder: a.question.question_order
-          })).sort((a, b) => a.questionOrder - b.questionOrder) || []
+          })).sort((a: any, b: any) => a.questionOrder - b.questionOrder) || []
         };
       });
 
