@@ -258,10 +258,11 @@ export function useLiveKit() {
 
   // Helper functions for easier access to survey data
   const getCurrentQuestion = useCallback(() => {
+    const currentQuestionNum = parseInt(surveyProgress.currentQuestionNumber || '0');
     return {
       number: surveyProgress.currentQuestionNumber,
       text: surveyProgress.currentQuestionText,
-      isAnswered: !!surveyProgress.lastAnswer
+      isAnswered: currentQuestionNum > 0 && currentQuestionNum <= surveyProgress.answeredQuestions
     };
   }, [surveyProgress]);
 
