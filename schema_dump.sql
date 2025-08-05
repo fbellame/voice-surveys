@@ -51,6 +51,25 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 
 
+CREATE OR REPLACE FUNCTION "public"."update_invitation_responded_at"("token" "text", "responded_timestamp" timestamp with time zone) RETURNS TABLE("id" "uuid", "responded_at" timestamp with time zone)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+  -- Update the invitation and return the updated row
+  RETURN QUERY
+  UPDATE public.survey_invitations 
+  SET 
+    responded_at = responded_timestamp,
+    updated_at = NOW()
+  WHERE unique_token = token
+  RETURNING survey_invitations.id, survey_invitations.responded_at;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_invitation_responded_at"("token" "text", "responded_timestamp" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -613,6 +632,12 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+
+
+
+GRANT ALL ON FUNCTION "public"."update_invitation_responded_at"("token" "text", "responded_timestamp" timestamp with time zone) TO "anon";
+GRANT ALL ON FUNCTION "public"."update_invitation_responded_at"("token" "text", "responded_timestamp" timestamp with time zone) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_invitation_responded_at"("token" "text", "responded_timestamp" timestamp with time zone) TO "service_role";
 
 
 
