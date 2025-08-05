@@ -349,7 +349,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
               <div className="bg-secondary/30 rounded-lg p-4 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-primary">
-                    Question {getCurrentQuestion().number}:
+                    Question {getCurrentQuestion().number || '1'}:
                   </span>
                   {getCurrentQuestion().isAnswered && (
                     <div className="h-5 w-5 bg-green-500 rounded-full flex items-center justify-center">
