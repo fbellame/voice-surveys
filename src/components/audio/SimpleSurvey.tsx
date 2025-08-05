@@ -89,6 +89,9 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
 
   const startSurvey = async () => {
     try {
+      console.log('Starting survey with invitation:', invitation);
+      console.log('Campaign:', campaign);
+      
       // Fetch room pattern from campaign_room_mapping
       const { data: roomMapping, error: roomError } = await supabase
         .from('campaign_room_mapping')
@@ -107,6 +110,9 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
       const roomName = `${baseRoomName}-${Math.floor(Math.random() * 10000)}`;
       const userName = `user-${Math.floor(Math.random() * 10000)}`;
       
+      console.log('Generated room name:', roomName);
+      console.log('User name:', userName);
+      
       const token = await generateToken(roomName, userName);
       await joinRoom(roomName, userName, token);
       setCurrentRoomName(roomName);
@@ -117,6 +123,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
         description: "Your survey session has begun",
       });
     } catch (err) {
+      console.error('Error starting survey:', err);
       toast({
         title: "Failed to Start Survey",
         description: "Please try again",
@@ -182,16 +189,73 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
         }
 
         // If this was an invitation-based survey, mark it as responded
-        if (invitation) {
-          const { error: invitationError } = await supabase
-            .from('survey_invitations')
-            .update({
-              responded_at: new Date().toISOString(),
-            })
-            .eq('unique_token', invitation.unique_token);
+        if (invitation && invitation.unique_token) {
+          console.log('Updating invitation responded_at for token:', invitation.unique_token);
+          console.log('Invitation object:', invitation);
+          
+          // Use RPC call to bypass RLS restriction for this specific update
+          // This is a workaround for the RLS policy that prevents anonymous updates
+          const timestamp = new Date().toISOString();
+          
+          const { data: updateData, error: invitationError } = await supabase
+            .rpc('update_invitation_responded_at', {
+              token: invitation.unique_token,
+              responded_timestamp: timestamp
+            });
+
+          console.log('Update result data:', updateData);
+          console.log('Update result error:', invitationError);
 
           if (invitationError) {
             console.error('Error updating invitation:', invitationError);
+          } else {
+            console.log('Successfully updated invitation responded_at');
+            
+            // Verify the update worked by re-querying
+            const { data: verifyData, error: verifyError } = await supabase
+              .from('survey_invitations')
+              .select('responded_at')
+              .eq('unique_token', invitation.unique_token)
+              .single();
+              
+            console.log('Verification query result:', verifyData);
+            console.log('Verification query error:', verifyError);
+          }
+        } else {
+          console.log('No invitation object or token found - trying fallback method');
+          
+          // Fallback: try to find invitation by the token we stored in submission
+          if (submissionData.invitation_token) {
+            console.log('Attempting fallback update with token:', submissionData.invitation_token);
+            
+            const timestamp = new Date().toISOString();
+            
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .rpc('update_invitation_responded_at', {
+                token: submissionData.invitation_token,
+                responded_timestamp: timestamp
+              });
+
+            console.log('Fallback update result data:', fallbackData);
+            console.log('Fallback update result error:', fallbackError);
+
+            if (fallbackError) {
+              console.error('Error in fallback invitation update:', fallbackError);
+            } else {
+              console.log('Successfully updated invitation via fallback method');
+              
+              // Verify fallback update
+              const { data: fallbackVerifyData, error: fallbackVerifyError } = await supabase
+                .from('survey_invitations')
+                .select('responded_at')
+                .eq('unique_token', submissionData.invitation_token)
+                .single();
+                
+              console.log('Fallback verification result:', fallbackVerifyData);
+              console.log('Fallback verification error:', fallbackVerifyError);
+            }
+          } else {
+            console.log('No invitation token available for fallback update');
           }
         }
       } catch (error) {
@@ -207,19 +271,21 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     if (onComplete) {
       onComplete();
     }
-  }, [leaveRoom, campaign, currentRoomName, userInfo, invitation, onComplete]);
+  }, [leaveRoom, campaign, currentRoomName, userInfo, invitation, onComplete, toast]);
 
   // Auto-complete survey when AI agent finishes
   useEffect(() => {
     if (surveyProgress.status === 'completed' && surveyActive && isConnected && !isAutoCompleting) {
       console.log('Survey completed by AI agent, automatically ending survey...');
+      console.log('Invitation object at auto-completion:', invitation);
+      console.log('Survey progress:', surveyProgress);
       setIsAutoCompleting(true);
       // Add a small delay to ensure all data is processed
       setTimeout(() => {
         endSurvey();
       }, 1000);
     }
-  }, [surveyProgress.status, surveyActive, isConnected, endSurvey, isAutoCompleting]);
+  }, [surveyProgress.status, surveyActive, isConnected, endSurvey, isAutoCompleting, invitation]);
 
   if (!surveyActive && !isConnected) {
     if (showUserForm || invitation) {
