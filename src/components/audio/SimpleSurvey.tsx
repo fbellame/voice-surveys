@@ -46,25 +46,6 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
   const [isAutoCompleting, setIsAutoCompleting] = useState(false);
   const { toast } = useToast();
 
-  // Get current user
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setCurrentUser(user);
-    });
-  }, []);
-
-  // Auto-complete survey when AI agent finishes
-  useEffect(() => {
-    if (surveyProgress.status === 'completed' && surveyActive && isConnected && !isAutoCompleting) {
-      console.log('Survey completed by AI agent, automatically ending survey...');
-      setIsAutoCompleting(true);
-      // Add a small delay to ensure all data is processed
-      setTimeout(() => {
-        endSurvey();
-      }, 1000);
-    }
-  }, [surveyProgress.status, surveyActive, isConnected, endSurvey, isAutoCompleting]);
-  
   const {
     isConnected,
     isConnecting,
@@ -79,6 +60,13 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     getCurrentQuestion,
     getProgressStats
   } = useLiveKit();
+
+  // Get current user
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setCurrentUser(user);
+    });
+  }, []);
 
   // Find agent and user participants
   const agent = participants.find(p => p.participant.identity.includes('agent') || p.participant.identity.includes('bot'));
@@ -220,6 +208,18 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
       onComplete();
     }
   }, [leaveRoom, campaign, currentRoomName, userInfo, invitation, onComplete]);
+
+  // Auto-complete survey when AI agent finishes
+  useEffect(() => {
+    if (surveyProgress.status === 'completed' && surveyActive && isConnected && !isAutoCompleting) {
+      console.log('Survey completed by AI agent, automatically ending survey...');
+      setIsAutoCompleting(true);
+      // Add a small delay to ensure all data is processed
+      setTimeout(() => {
+        endSurvey();
+      }, 1000);
+    }
+  }, [surveyProgress.status, surveyActive, isConnected, endSurvey, isAutoCompleting]);
 
   if (!surveyActive && !isConnected) {
     if (showUserForm || invitation) {
