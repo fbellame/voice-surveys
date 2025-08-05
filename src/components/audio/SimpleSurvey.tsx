@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLiveKit } from '@/hooks/useLiveKit';
 import { generateToken } from '@/utils/token';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     email: invitation?.email || ''
   });
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
+  const [isAutoCompleting, setIsAutoCompleting] = useState(false);
   const { toast } = useToast();
 
   // Get current user
@@ -51,6 +52,18 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
       setCurrentUser(user);
     });
   }, []);
+
+  // Auto-complete survey when AI agent finishes
+  useEffect(() => {
+    if (surveyProgress.status === 'completed' && surveyActive && isConnected && !isAutoCompleting) {
+      console.log('Survey completed by AI agent, automatically ending survey...');
+      setIsAutoCompleting(true);
+      // Add a small delay to ensure all data is processed
+      setTimeout(() => {
+        endSurvey();
+      }, 1000);
+    }
+  }, [surveyProgress.status, surveyActive, isConnected, endSurvey, isAutoCompleting]);
   
   const {
     isConnected,
@@ -124,9 +137,10 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     }
   };
 
-  const endSurvey = async () => {
+  const endSurvey = useCallback(async () => {
     await leaveRoom();
     setSurveyActive(false);
+    setIsAutoCompleting(false); // Reset auto-completion flag
     
     // Check if submission already exists and update it, otherwise create new one
     if (campaign && currentRoomName) {
@@ -205,7 +219,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     if (onComplete) {
       onComplete();
     }
-  };
+  }, [leaveRoom, campaign, currentRoomName, userInfo, invitation, onComplete]);
 
   if (!surveyActive && !isConnected) {
     if (showUserForm || invitation) {
