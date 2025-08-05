@@ -91,6 +91,7 @@ export default function Analytics() {
       if (error) throw error;
       setCampaigns(data || []);
       
+      // Select the first campaign by default
       if (data && data.length > 0) {
         setSelectedCampaign(data[0].id.toString());
       }
@@ -111,17 +112,18 @@ export default function Analytics() {
     try {
       const campaignIdNum = parseInt(campaignId);
 
-      // Fetch invitations
+      // Fetch all invitations for the campaign with fresh data
       const { data: invitations, error: invitationsError } = await supabase
         .from('survey_invitations')
         .select('id, email, sent_at, responded_at, user_id, unique_token')
-        .eq('campaign_id', campaignIdNum);
+        .eq('campaign_id', campaignIdNum)
+        .order('created_at', { ascending: false });
 
       if (invitationsError) throw invitationsError;
 
-      // Fetch survey submissions with answers
+      // Fetch submissions separately and join them manually
       const { data: submissions, error: submissionsError } = await supabase
-        .from('survey_submissions' as any)
+        .from('survey_submissions')
         .select(`
           id,
           phone_number,
@@ -131,6 +133,7 @@ export default function Analytics() {
           email,
           geography,
           occupation,
+          created_at,
           answer (
             answer_text,
             question (
@@ -139,25 +142,30 @@ export default function Analytics() {
             )
           )
         `)
-        .eq('campaign_id', campaignIdNum);
+        .eq('campaign_id', campaignIdNum)
+        .order('created_at', { ascending: false });
 
       if (submissionsError) throw submissionsError;
 
-      // Merge data properly - only show data for invitations that have been responded to
+      console.log('Debug - Invitations:', invitations?.length);
+      console.log('Debug - Submissions:', submissions?.length);
+      console.log('Debug - Invitations with responded_at:', invitations?.filter(i => i.responded_at).length);
+
+      // Create respondents array by matching invitations with submissions
       const respondents: Respondent[] = (invitations || []).map(invitation => {
-        // Find the correct submission by matching invitation_token with unique_token
-        const submission = (submissions as any)?.find((s: any) => 
+        // Find the submission that matches this invitation's token
+        const submission = (submissions || []).find((s: any) => 
           s.invitation_token === invitation.unique_token
         );
         
-        return {
+        const respondent = {
           id: invitation.id,
           email: invitation.email,
           fullName: submission?.full_name || null,
           geography: submission?.geography || null,
           occupation: submission?.occupation || null,
           sentAt: invitation.sent_at,
-          respondedAt: invitation.responded_at,
+          respondedAt: invitation.responded_at, // This is set by the chat app
           phoneNumber: submission?.phone_number || '',
           roomName: submission?.room_name || '',
           answers: submission?.answer?.map((a: any) => ({
@@ -166,11 +174,17 @@ export default function Analytics() {
             questionOrder: a.question.question_order
           })).sort((a: any, b: any) => a.questionOrder - b.questionOrder) || []
         };
+
+        console.log(`Debug - Invitation ${invitation.email}: responded_at=${invitation.responded_at}, has_submission=${!!submission}`);
+        
+        return respondent;
       });
 
       const totalInvitations = invitations?.length || 0;
-      const totalResponses = respondents.filter(r => r.respondedAt).length;
+      const totalResponses = respondents.filter(r => r.respondedAt).length; // Count based on responded_at
       const responseRate = totalInvitations > 0 ? (totalResponses / totalInvitations) * 100 : 0;
+
+      console.log(`Debug - Total: ${totalInvitations}, Responses: ${totalResponses}, Rate: ${responseRate}%`);
 
       setAnalytics({
         totalInvitations,

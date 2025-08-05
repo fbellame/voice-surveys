@@ -16,6 +16,8 @@ interface SurveyInvitation {
   sent_at: string | null;
   responded_at: string | null;
   created_at: string;
+  hasSubmission?: boolean;
+  submissionDate?: string;
 }
 
 interface SurveyInvitationsProps {
@@ -32,14 +34,45 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
 
   const fetchInvitations = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch invitations with fresh data
+      const { data: invitationsData, error: invitationsError } = await supabase
         .from('survey_invitations')
         .select('*')
         .eq('campaign_id', campaignId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setInvitations(data || []);
+      if (invitationsError) throw invitationsError;
+
+      // Fetch submissions for this campaign to verify completion
+      const { data: submissionsData, error: submissionsError } = await supabase
+        .from('survey_submissions')
+        .select('invitation_token, created_at, full_name')
+        .eq('campaign_id', campaignId)
+        .not('invitation_token', 'is', null);
+
+      if (submissionsError) throw submissionsError;
+
+      console.log('Debug SurveyInvitations - Invitations:', invitationsData?.length);
+      console.log('Debug SurveyInvitations - Submissions:', submissionsData?.length);
+
+      // Enhance invitations with submission status
+      const enhancedInvitations = (invitationsData || []).map(invitation => {
+        const submission = (submissionsData || []).find(
+          s => s.invitation_token === invitation.unique_token
+        );
+        
+        const enhanced = {
+          ...invitation,
+          hasSubmission: !!submission,
+          submissionDate: submission?.created_at || null
+        };
+
+        console.log(`Debug - ${invitation.email}: responded_at=${invitation.responded_at}, hasSubmission=${enhanced.hasSubmission}`);
+        
+        return enhanced;
+      });
+
+      setInvitations(enhancedInvitations);
     } catch (error) {
       console.error('Error fetching invitations:', error);
       toast({
@@ -209,14 +242,24 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
                           <Mail className="h-4 w-4" />
                           <span className="font-medium">{invitation.email}</span>
                           {invitation.responded_at && (
-                            <Badge variant="secondary">Responded</Badge>
+                            <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
+                              Completed
+                            </Badge>
                           )}
                           {invitation.sent_at && !invitation.responded_at && (
-                            <Badge variant="outline">Sent</Badge>
+                            <Badge variant="outline" className="border-orange-200 text-orange-700">
+                              Pending
+                            </Badge>
+                          )}
+                          {!invitation.sent_at && !invitation.responded_at && (
+                            <Badge variant="outline">Not Sent</Badge>
                           )}
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          Created: {new Date(invitation.created_at).toLocaleDateString()}
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <div>Created: {new Date(invitation.created_at).toLocaleDateString()}</div>
+                          {invitation.responded_at && (
+                            <div>Completed: {new Date(invitation.responded_at).toLocaleDateString()}</div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-sm">
                           <code className="bg-muted px-2 py-1 rounded text-xs">
