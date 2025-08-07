@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { Download, Filter, Search, Play, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 
@@ -44,6 +45,7 @@ interface Campaign {
 
 export default function Answers() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [surveyResponses, setSurveyResponses] = useState<SurveyResponse[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,15 +56,21 @@ export default function Answers() {
 
   useEffect(() => {
     fetchData();
-  }, [selectedCampaign, timeFilter]);
+  }, [selectedCampaign, timeFilter, user?.id]);
 
   const fetchData = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
     try {
       // Fetch campaigns
       const { data: campaignsData, error: campaignsError } = await supabase
         .from('campaign')
         .select('id, name, campaign_type')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (campaignsError) throw campaignsError;
