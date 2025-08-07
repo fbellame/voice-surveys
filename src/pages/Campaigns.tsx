@@ -32,8 +32,7 @@ interface CampaignWithStats {
   end_date: string | null;
   status: "active" | "draft" | "completed";
   questions: number;
-  calls: number;
-  responses: number;
+  answers: number;
 }
 
 export default function Campaigns() {
@@ -60,13 +59,6 @@ export default function Campaigns() {
 
         if (campaignsError) throw campaignsError;
 
-        // Fetch call counts per campaign
-        const { data: callCounts, error: callError } = await supabase
-          .from('survey_submissions' as any)
-          .select('campaign_id');
-
-        if (callError) throw callError;
-
         // Fetch question counts per campaign
         const { data: questionCounts, error: questionError } = await supabase
           .from('question')
@@ -74,7 +66,7 @@ export default function Campaigns() {
 
         if (questionError) throw questionError;
 
-        // Fetch answer counts per campaign (via calls)
+        // Fetch answer counts per campaign
         const { data: answerCounts, error: answerError } = await supabase
           .from('answer')
           .select('survey_submission_id, survey_submissions!inner(campaign_id)' as any);
@@ -83,9 +75,8 @@ export default function Campaigns() {
 
         // Process the data
         const campaignsWithStats: CampaignWithStats[] = (campaignsData as any[]).map(campaign => {
-          const callsForCampaign = (callCounts as any)?.filter((call: any) => call.campaign_id === campaign.id).length || 0;
           const questionsForCampaign = questionCounts.filter(q => q.campaign_id === campaign.id).length;
-          const responsesForCampaign = (answerCounts as any)?.filter(
+          const answersForCampaign = (answerCounts as any)?.filter(
             (answer: any) => answer.survey_submissions && answer.survey_submissions.campaign_id === campaign.id
           ).length || 0;
 
@@ -112,8 +103,7 @@ export default function Campaigns() {
             end_date: campaign.end_date,
             status,
             questions: questionsForCampaign,
-            calls: callsForCampaign,
-            responses: responsesForCampaign
+            answers: answersForCampaign
           };
         });
 
@@ -186,8 +176,7 @@ export default function Campaigns() {
 
   const totalCampaigns = campaigns.length;
   const activeCampaigns = campaigns.filter(c => c.status === "active").length;
-  const totalCalls = campaigns.reduce((sum, c) => sum + c.calls, 0);
-  const totalResponses = campaigns.reduce((sum, c) => sum + c.responses, 0);
+  const totalAnswers = campaigns.reduce((sum, c) => sum + c.answers, 0);
 
   return (
     <Layout currentPage="campaigns">
@@ -222,13 +211,8 @@ export default function Campaigns() {
             icon={Play}
           />
           <StatsCard
-            title="Total Calls"
-            value={totalCalls}
-            icon={Phone}
-          />
-          <StatsCard
-            title="Total Responses"
-            value={totalResponses}
+            title="Total Answers"
+            value={totalAnswers}
             icon={Users}
           />
         </div>
@@ -275,8 +259,7 @@ export default function Campaigns() {
                       </div>
                       <div className="flex items-center gap-4">
                         <span>{campaign.questions} questions</span>
-                        <span>{campaign.calls} calls</span>
-                        <span>{campaign.responses} responses</span>
+                        <span>{campaign.answers} answers</span>
                       </div>
                     </div>
                   </div>
@@ -323,7 +306,7 @@ export default function Campaigns() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Are you sure you want to delete "{campaign.name}"? This action cannot be undone and will permanently delete the campaign along with all associated questions, calls, and responses.
+                            Are you sure you want to delete "{campaign.name}"? This action cannot be undone and will permanently delete the campaign along with all associated questions and answers.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
