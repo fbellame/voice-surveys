@@ -21,7 +21,7 @@ export interface SurveyProgress {
   answeredQuestions: number;
   lastAnswer: string | null;
   completionPercentage: number;
-  status: 'started' | 'in_progress' | 'completed' | 'error';
+  status: 'started' | 'in_progress' | 'completed' | 'closing' | 'error';
   statusMessage: string;
 }
 
@@ -271,7 +271,7 @@ export function useLiveKit() {
       completed: surveyProgress.answeredQuestions,
       total: surveyProgress.totalQuestions,
       percentage: surveyProgress.completionPercentage,
-      isComplete: surveyProgress.status === 'completed'
+      isComplete: surveyProgress.status === 'completed' || surveyProgress.status === 'closing'
     };
   }, [surveyProgress]);
 
