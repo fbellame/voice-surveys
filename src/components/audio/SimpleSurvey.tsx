@@ -264,7 +264,7 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     }
     
     toast({
-      title: "Survey Completed",
+      title: "Survey Closing",
       description: "Thank you for participating",
     });
     
@@ -273,10 +273,10 @@ export function SimpleSurvey({ campaign, invitation, onComplete }: SimpleSurveyP
     }
   }, [leaveRoom, campaign, currentRoomName, userInfo, invitation, onComplete, toast]);
 
-  // Auto-complete survey when AI agent finishes
+  // Auto-complete survey when AI agent sends closing status
   useEffect(() => {
-    if (surveyProgress.status === 'completed' && surveyActive && isConnected && !isAutoCompleting) {
-      console.log('Survey completed by AI agent, automatically ending survey...');
+    if (surveyProgress.status === 'closing' && surveyActive && isConnected && !isAutoCompleting) {
+      console.log('Survey closing status received from AI agent, automatically ending survey...');
       console.log('Invitation object at auto-completion:', invitation);
       console.log('Survey progress:', surveyProgress);
       setIsAutoCompleting(true);
