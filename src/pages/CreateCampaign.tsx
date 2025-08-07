@@ -117,16 +117,16 @@ export default function CreateCampaign() {
 
 
       toast({
-        title: "Succès",
-        description: "La campagne a été créée avec succès",
+        title: "Success",
+        description: "Campaign created successfully",
       });
 
       navigate('/campaigns');
     } catch (error) {
       console.error('Error creating campaign:', error);
       toast({
-        title: "Erreur",
-        description: "Erreur lors de la création de la campagne",
+        title: "Error",
+        description: "Error creating campaign",
         variant: "destructive",
       });
     } finally {
@@ -145,12 +145,12 @@ export default function CreateCampaign() {
             className="hover:bg-accent"
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour
+            Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Nouvelle Campagne</h1>
+            <h1 className="text-3xl font-bold text-foreground">New Campaign</h1>
             <p className="text-muted-foreground mt-2">
-              Créer une nouvelle campagne de sondage
+              Create a new survey campaign
             </p>
           </div>
         </div>
@@ -159,20 +159,20 @@ export default function CreateCampaign() {
           {/* Campaign Details */}
           <Card className="bg-gradient-card shadow-card border-0">
             <CardHeader>
-              <CardTitle>Détails de la Campagne</CardTitle>
+              <CardTitle>Campaign Details</CardTitle>
               <CardDescription>
-                Informations générales sur la campagne
+                General campaign information
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Nom de la campagne *</Label>
+                  <Label htmlFor="name">Campaign Name *</Label>
                   <Input
                     id="name"
                     value={campaignForm.name}
                     onChange={(e) => handleCampaignFormChange('name', e.target.value)}
-                    placeholder="Nom de la campagne"
+                    placeholder="Campaign name"
                     required
                   />
                 </div>
@@ -182,36 +182,36 @@ export default function CreateCampaign() {
                     id="description"
                     value={campaignForm.description}
                     onChange={(e) => handleCampaignFormChange('description', e.target.value)}
-                    placeholder="Description de la campagne"
+                    placeholder="Campaign description"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="campaign_type">Type de campagne</Label>
+                <Label htmlFor="campaign_type">Campaign Type</Label>
                 <Select
                   value={campaignForm.campaign_type}
                   onValueChange={(value) => handleCampaignFormChange('campaign_type', value)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner le type" />
+                    <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="web_survey">Sondage Web</SelectItem>
-                    <SelectItem value="phone_survey">Sondage Téléphonique</SelectItem>
+                    <SelectItem value="web_survey">Web Survey</SelectItem>
+                    <SelectItem value="phone_survey">Phone Survey</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-muted-foreground">
                   {campaignForm.campaign_type === 'web_survey' 
-                    ? 'Sondage en ligne avec formulaire web'
-                    : 'Sondage par téléphone avec questions vocales'
+                    ? 'Online survey with web form'
+                    : 'Phone survey with voice questions'
                   }
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="start_date">Date de début</Label>
+                  <Label htmlFor="start_date">Start Date</Label>
                   <Input
                     id="start_date"
                     type="date"
@@ -220,7 +220,7 @@ export default function CreateCampaign() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="end_date">Date de fin</Label>
+                  <Label htmlFor="end_date">End Date</Label>
                   <Input
                     id="end_date"
                     type="date"
@@ -231,47 +231,47 @@ export default function CreateCampaign() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="greeting">Message d'accueil</Label>
+                <Label htmlFor="greeting">Welcome Message</Label>
                 <Textarea
                   id="greeting"
                   value={campaignForm.greeting}
                   onChange={(e) => handleCampaignFormChange('greeting', e.target.value)}
-                  placeholder="Message d'accueil pour les participants"
+                  placeholder="Welcome message for participants"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="intro_prompt">Prompt d'introduction</Label>
+                <Label htmlFor="intro_prompt">Introduction Prompt</Label>
                 <Textarea
                   id="intro_prompt"
                   value={campaignForm.intro_prompt}
                   onChange={(e) => handleCampaignFormChange('intro_prompt', e.target.value)}
-                  placeholder="Prompt d'introduction"
+                  placeholder="Introduction prompt"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="purpose_explanation">Explication du but</Label>
+                <Label htmlFor="purpose_explanation">Purpose Explanation</Label>
                 <Textarea
                   id="purpose_explanation"
                   value={campaignForm.purpose_explanation}
                   onChange={(e) => handleCampaignFormChange('purpose_explanation', e.target.value)}
-                  placeholder="Explication du but de la campagne"
+                  placeholder="Explanation of the campaign purpose"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="closing">Message de fermeture</Label>
+                <Label htmlFor="closing">Closing Message</Label>
                 <Textarea
                   id="closing"
                   value={campaignForm.closing}
                   onChange={(e) => handleCampaignFormChange('closing', e.target.value)}
-                  placeholder="Message de fermeture"
+                  placeholder="Closing message"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="room_pattern">Modèle de salle</Label>
+                <Label htmlFor="room_pattern">Room Pattern</Label>
                 <Input
                   id="room_pattern"
                   value={campaignForm.room_pattern}
@@ -279,12 +279,12 @@ export default function CreateCampaign() {
                   placeholder="ex: campaign-name-, survey-test-"
                 />
                 <p className="text-sm text-muted-foreground">
-                  Modèle pour identifier les salles associées à cette campagne
+                  Pattern to identify rooms associated with this campaign
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="campaign_uri">URI de la campagne</Label>
+                <Label htmlFor="campaign_uri">Campaign URI</Label>
                 <Input
                   id="campaign_uri"
                   value={campaignForm.campaign_uri}
@@ -292,7 +292,7 @@ export default function CreateCampaign() {
                   placeholder="ex: campaign-name, survey-test"
                 />
                 <p className="text-sm text-muted-foreground">
-                  URI unique pour accéder à la campagne (sera générée automatiquement)
+                  Unique URI to access the campaign (will be generated automatically)
                 </p>
               </div>
             </CardContent>
@@ -306,8 +306,8 @@ export default function CreateCampaign() {
                   <CardTitle>Questions</CardTitle>
                   <CardDescription>
                     {campaignForm.campaign_type === 'web_survey' 
-                      ? 'Questions à inclure dans le sondage'
-                      : 'Questions à poser pendant les appels'
+                      ? 'Questions to include in the survey'
+                      : 'Questions to ask during calls'
                     }
                   </CardDescription>
                 </div>
@@ -318,7 +318,7 @@ export default function CreateCampaign() {
                   className="hover:bg-accent"
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  Ajouter une question
+                  Add Question
                 </Button>
               </div>
             </CardHeader>
@@ -356,14 +356,14 @@ export default function CreateCampaign() {
               onClick={() => navigate('/campaigns')}
               disabled={loading}
             >
-              Annuler
+              Cancel
             </Button>
             <Button
               type="submit"
               disabled={loading || !campaignForm.name.trim()}
               className="bg-gradient-primary hover:opacity-90 transition-opacity"
             >
-              {loading ? "Création..." : "Créer la campagne"}
+              {loading ? "Creating..." : "Create Campaign"}
             </Button>
           </div>
         </form>
