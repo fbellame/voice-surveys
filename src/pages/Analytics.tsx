@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { Users, Mail, CheckCircle, Clock, MapPin, Briefcase, Phone } from "lucide-react";
 import { format } from "date-fns";
 
@@ -76,16 +77,22 @@ export default function Analytics() {
   const [analytics, setAnalytics] = useState<ResponseAnalytics | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchCampaigns();
-  }, []);
+  }, [user?.id]);
 
   const fetchCampaigns = async () => {
+    if (!user?.id) {
+      return;
+    }
+    
     try {
       const { data, error } = await supabase
         .from('campaign')
         .select('id, name')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
