@@ -68,7 +68,9 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
   }, [campaignId]);
 
   const generateSurveyUrl = (token: string) => {
-    return `${window.location.origin}/survey/${campaignUri}?token=${token}`;
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const baseUrl = isLocalDev ? window.location.origin : 'https://survey.generative-ai.ca';
+    return `${baseUrl}/survey/${campaignUri}?token=${token}`;
   };
 
   const createLink = async () => {
