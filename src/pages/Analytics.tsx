@@ -132,6 +132,11 @@ export default function Analytics() {
 
       if (error) throw error;
       setCampaigns(data || []);
+      
+      // Automatically select the first campaign if available and no campaign is currently selected
+      if (data && data.length > 0 && !selectedCampaign) {
+        setSelectedCampaign(data[0].id.toString());
+      }
     } catch (error) {
       console.error('Error fetching campaigns:', error);
       toast({
