@@ -2,8 +2,16 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://rpgpwailndlmpgufmfzi.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "REDACTED_SECRET";
+// Use local development URLs when in development mode
+const isDevelopment = import.meta.env.DEV;
+
+const SUPABASE_URL = isDevelopment 
+  ? "http://127.0.0.1:54321" 
+  : "https://rpgpwailndlmpgufmfzi.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY = isDevelopment
+  ? "REDACTED_SECRET"
+  : "REDACTED_SECRET";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
