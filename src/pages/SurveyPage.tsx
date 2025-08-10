@@ -17,9 +17,22 @@ interface Campaign {
 interface SurveyInvitation {
   id: string;
   campaign_id: number;
-  email: string;
   unique_token: string;
   responded_at: string | null;
+  invitation_type: string;
+  contact_value: string | null;
+}
+
+interface CampaignLink {
+  id: string;
+  campaign_id: number;
+  link_type: string;
+  unique_token: string;
+  name: string | null;
+  description: string | null;
+  is_active: boolean;
+  max_responses: number | null;
+  current_responses: number;
 }
 
 const SurveyPage = () => {
@@ -28,6 +41,7 @@ const SurveyPage = () => {
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [invitation, setInvitation] = useState<SurveyInvitation | null>(null);
+  const [campaignLink, setCampaignLink] = useState<CampaignLink | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [surveyCompleted, setSurveyCompleted] = useState(false);
@@ -106,47 +120,66 @@ const SurveyPage = () => {
           console.log('Token length:', token.length);
           console.log('Campaign ID:', campaignData.id);
           
-          const { data: invitationData, error: invitationError } = await (supabase as any)
+          // First try to find a personal invitation
+          const { data: invitationData, error: invitationError } = await supabase
             .from('survey_invitations')
-            .select('id, campaign_id, email, unique_token, responded_at')
+            .select('id, campaign_id, unique_token, responded_at, invitation_type, contact_value')
             .eq('unique_token', token)
             .eq('campaign_id', campaignData.id)
             .maybeSingle();
 
-          console.log('Invitation query result:', invitationData);
-          console.log('Invitation query error:', invitationError);
-
           if (invitationError) {
             console.error('Error fetching invitation:', invitationError);
-            setError('Invalid survey link');
+          }
+
+          if (invitationData) {
+            console.log('Found personal invitation:', invitationData);
+            
+            if (invitationData.responded_at) {
+              const completedDate = new Date(invitationData.responded_at).toLocaleDateString();
+              setError(`This survey has been completed on ${completedDate}`);
+              setLoading(false);
+              return;
+            }
+
+            setInvitation(invitationData);
             setLoading(false);
             return;
           }
 
-          if (!invitationData) {
-            console.log('No invitation data found. Trying broader search...');
+          // If no personal invitation found, try to find a shared campaign link
+          const { data: linkData, error: linkError } = await supabase
+            .from('campaign_links')
+            .select('*')
+            .eq('unique_token', token)
+            .eq('campaign_id', campaignData.id)
+            .eq('is_active', true)
+            .maybeSingle();
+
+          if (linkError) {
+            console.error('Error fetching campaign link:', linkError);
+          }
+
+          if (linkData) {
+            console.log('Found shared campaign link:', linkData);
             
-            // Try to find any token that matches (debugging)
-            const { data: allTokens } = await (supabase as any)
-              .from('survey_invitations')
-              .select('unique_token, campaign_id')
-              .eq('campaign_id', campaignData.id);
-            
-            console.log('All tokens for this campaign:', allTokens);
-            
-            setError('Invalid or expired survey link');
+            // Check if the link has reached its maximum responses
+            if (linkData.max_responses && linkData.current_responses >= linkData.max_responses) {
+              setError('This survey link has reached its maximum number of responses');
+              setLoading(false);
+              return;
+            }
+
+            setCampaignLink(linkData);
             setLoading(false);
             return;
           }
 
-          if (invitationData.responded_at) {
-            const completedDate = new Date(invitationData.responded_at).toLocaleDateString();
-            setError(`This survey has been completed on ${completedDate}`);
-            setLoading(false);
-            return;
-          }
-
-          setInvitation(invitationData);
+          // If neither found, show error
+          console.log('No invitation or link found for token:', token);
+          setError('Invalid or expired survey link');
+          setLoading(false);
+          return;
         }
       } catch (err) {
         console.error('Error:', err);
@@ -155,7 +188,6 @@ const SurveyPage = () => {
         setLoading(false);
       }
     };
-
 
   const handleComplete = async () => {
     setSurveyCompleted(true);
@@ -210,7 +242,12 @@ const SurveyPage = () => {
     );
   }
 
-  return <SimpleSurvey campaign={campaign} invitation={invitation} onComplete={handleComplete} />;
+  return <SimpleSurvey 
+    campaign={campaign} 
+    invitation={invitation} 
+    campaignLink={campaignLink}
+    onComplete={handleComplete} 
+  />;
 };
 
 export default SurveyPage;
