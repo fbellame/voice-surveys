@@ -1,9 +1,14 @@
 import os
+import logging
 from pathlib import Path
 import json
 from supabase import create_client, Client
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
+
+# Set up logger
+logger = logging.getLogger("futures_survey_db")
+logger.setLevel(logging.INFO)
 
 # Load environment variables
 load_dotenv()
@@ -175,27 +180,50 @@ def get_campaign_by_id(campaign_id):
         print(f"Error getting campaign by id: {e}")
         raise
 
-def record_survey_submission(phone_number=None, campaign_id=None, room_name=None, 
-                           call_timestamp=None, s3_recording_url=None, 
-                           full_name=None, email=None, geography=None, 
-                           occupation=None, invitation_token=None):
-    """Record a survey submission in Supabase. Check for duplicates first."""
+def get_user_profile_by_token(link_token: str) -> Optional[Dict[str, Any]]:
+    """Get user profile by link token from Supabase."""
     try:
+        result = supabase.table("user_profiles").select("*").eq("link_token", link_token).execute()
+        if result.data:
+            logger.info(f"Found user profile for link token: {link_token}")
+            return result.data[0]
+        else:
+            logger.warning(f"No user profile found for link token: {link_token}")
+            return None
+    except Exception as e:
+        logger.error(f"Error getting user profile by link token: {e}")
+        raise
+
+def record_survey_submission(campaign_id=None, room_name=None, 
+                           call_timestamp=None, s3_recording_url=None,
+                           link_token=None, link_type=None):
+    """Record a survey submission in Supabase using the new table structure."""
+    try:
+        logger.info(f"Attempting to record survey submission for room: {room_name}")
+        
         # First check if a survey submission already exists for this room
         existing_submission = get_existing_survey_submission(room_name)
         if existing_submission:
-            print(f"Survey submission already exists for room {room_name} with id: {existing_submission['id']}")
+            logger.info(f"Survey submission already exists for room {room_name} with id: {existing_submission['id']}")
             return existing_submission['id']
+        
+        if link_token is None:
+            logger.error("Failed to record survey submission: link_token must be provided")
+            raise ValueError("link_token must be provided (NOT NULL in DB schema)")
+        if link_type is None:
+            logger.error("Failed to record survey submission: link_type must be provided")
+            raise ValueError("link_type must be provided (NOT NULL in DB schema)")
+        
+        # Get user profile ID if it exists
+        user_profile = get_user_profile_by_token(link_token)
+        user_profile_id = user_profile["id"] if user_profile else None
         
         data = {
             "campaign_id": campaign_id,
+            "user_profile_id": user_profile_id,
             "room_name": room_name,
-            "phone_number": phone_number,
-            "full_name": full_name,
-            "email": email,
-            "geography": geography,
-            "occupation": occupation,
-            "invitation_token": invitation_token,
+            "link_token": link_token,
+            "link_type": link_type,
             "s3_recording_url": s3_recording_url
         }
         
@@ -206,38 +234,42 @@ def record_survey_submission(phone_number=None, campaign_id=None, room_name=None
         # Remove None values
         data = {k: v for k, v in data.items() if v is not None}
         
+        logger.info(f"Inserting new survey submission with data: {data}")
         result = supabase.table("survey_submissions").insert(data).execute()
         
         if result.data:
             submission_id = result.data[0]["id"]
-            print(f"Recorded survey submission with id: {submission_id}")
+            logger.info(f"Successfully recorded survey submission. ID: {submission_id}, Room: {room_name}, Campaign: {campaign_id}, Link Type: {link_type}")
             return submission_id
         else:
+            logger.error(f"Failed to record survey submission for room {room_name}: No data returned from insert operation")
             raise Exception("Failed to record survey submission")
             
     except Exception as e:
-        print(f"Error recording survey submission: {e}")
+        logger.error(f"Error recording survey submission for room {room_name}: {str(e)}")
         raise
 
 def record_survey_response(phone_number, campaign_id, room_name, call_timestamp=None, s3_recording_url=None):
     """Record a survey response in Supabase (legacy wrapper for record_survey_submission)."""
     return record_survey_submission(
-        phone_number=phone_number, 
         campaign_id=campaign_id, 
         room_name=room_name, 
         call_timestamp=call_timestamp, 
-        s3_recording_url=s3_recording_url
+        s3_recording_url=s3_recording_url,
+        link_token=room_name,
+        link_type="phone"
     )
 
 # Keep the old function name for backward compatibility
 def record_call(phone_number, campaign_id, room_name, call_timestamp=None, s3_recording_url=None):
     """Record a call in Supabase (legacy wrapper for record_survey_submission)."""
     return record_survey_submission(
-        phone_number=phone_number, 
         campaign_id=campaign_id, 
         room_name=room_name, 
         call_timestamp=call_timestamp, 
-        s3_recording_url=s3_recording_url
+        s3_recording_url=s3_recording_url,
+        link_token=room_name,
+        link_type="phone"
     )
 
 def record_answer(survey_submission_id, question_id, answer_text, answered_at=None):
