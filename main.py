@@ -343,11 +343,14 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info(f"Selected campaign: {campaign['name']} (ID: {campaign['id']})")
         
         # Create new survey submission only if one doesn't exist
+        # Note: user_profile should be created by the frontend before room creation
+        link_token = room_name  # Replace with actual token logic if needed
+        link_type = "phone" if phone_number else "email" if email else "general"
         submission_id = record_survey_submission(
-            phone_number=participant_id if phone_number else None,
-            email=participant_id if email else None,
-            campaign_id=campaign["id"], 
-            room_name=room_name, 
+            campaign_id=campaign["id"],
+            room_name=room_name,
+            link_token=link_token,
+            link_type=link_type,
             s3_recording_url=None
         )
         logger.info(f"New survey submission recorded in DB with id: {submission_id}")
