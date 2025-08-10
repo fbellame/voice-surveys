@@ -3,14 +3,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Copy, Mail, QrCode, Trash2 } from 'lucide-react';
+import { Copy, Mail, QrCode, Trash2, Phone, User } from 'lucide-react';
 import QRCode from 'qrcode';
 
 interface SurveyInvitation {
   id: string;
-  email: string;
+  invitation_type: 'email' | 'phone' | 'other';
+  contact_value: string;
   unique_token: string;
   qr_code_url: string | null;
   sent_at: string | null;
@@ -27,12 +30,14 @@ interface SurveyInvitationsProps {
 
 export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId, campaignUri }) => {
   const [invitations, setInvitations] = useState<SurveyInvitation[]>([]);
-  const [email, setEmail] = useState('');
+  const [invitationType, setInvitationType] = useState<'email' | 'phone' | 'other'>('email');
+  const [contactValue, setContactValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingInvitations, setLoadingInvitations] = useState(true);
   const { toast } = useToast();
 
   const fetchInvitations = async () => {
+    setLoadingInvitations(true);
     try {
       // Fetch invitations with fresh data
       const { data: invitationsData, error: invitationsError } = await supabase
@@ -43,31 +48,31 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
 
       if (invitationsError) throw invitationsError;
 
-      // Fetch submissions for this campaign to verify completion
-      const { data: submissionsData, error: submissionsError } = await supabase
-        .from('survey_submissions')
-        .select('invitation_token, created_at, full_name')
+      // Fetch user profiles for this campaign to verify completion
+      const { data: userProfilesData, error: userProfilesError } = await supabase
+        .from('user_profiles')
+        .select('link_token, created_at, full_name')
         .eq('campaign_id', campaignId)
-        .not('invitation_token', 'is', null);
+        .eq('link_type', 'personal');
 
-      if (submissionsError) throw submissionsError;
+      if (userProfilesError) throw userProfilesError;
 
       console.log('Debug SurveyInvitations - Invitations:', invitationsData?.length);
-      console.log('Debug SurveyInvitations - Submissions:', submissionsData?.length);
+      console.log('Debug SurveyInvitations - User Profiles:', userProfilesData?.length);
 
-      // Enhance invitations with submission status
+      // Enhance invitations with user profile status
       const enhancedInvitations = (invitationsData || []).map(invitation => {
-        const submission = (submissionsData || []).find(
-          s => s.invitation_token === invitation.unique_token
+        const userProfile = (userProfilesData || []).find(
+          up => up.link_token === invitation.unique_token
         );
         
         const enhanced = {
           ...invitation,
-          hasSubmission: !!submission,
-          submissionDate: submission?.created_at || null
+          hasSubmission: !!userProfile,
+          submissionDate: userProfile?.created_at || null
         };
 
-        console.log(`Debug - ${invitation.email}: responded_at=${invitation.responded_at}, hasSubmission=${enhanced.hasSubmission}`);
+        console.log(`Debug - ${invitation.contact_value}: responded_at=${invitation.responded_at}, hasSubmission=${enhanced.hasSubmission}`);
         
         return enhanced;
       });
@@ -90,7 +95,7 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
   }, [campaignId]);
 
   const generateSurveyUrl = (token: string) => {
-    return `https://survey.generative-ai.ca/survey/${campaignUri}?token=${token}`;
+    return `${window.location.origin}/survey/${campaignUri}?token=${token}`;
   };
 
   const generateQRCode = async (url: string): Promise<string> => {
@@ -100,21 +105,21 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
         margin: 2,
         color: {
           dark: '#000000',
-          light: '#FFFFFF',
-        },
+          light: '#FFFFFF'
+        }
       });
       return qrCodeDataURL;
     } catch (error) {
       console.error('Error generating QR code:', error);
-      throw error;
+      return '';
     }
   };
 
   const createInvitation = async () => {
-    if (!email.trim()) {
+    if (!contactValue.trim()) {
       toast({
         title: 'Error',
-        description: 'Please enter an email address',
+        description: `Please enter a ${invitationType}`,
         variant: 'destructive',
       });
       return;
@@ -132,7 +137,8 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
         .from('survey_invitations')
         .insert({
           campaign_id: campaignId,
-          email: email.trim(),
+          invitation_type: invitationType,
+          contact_value: contactValue.trim(),
           user_id: user.id,
         })
         .select()
@@ -157,7 +163,7 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
         description: 'Survey invitation created successfully!',
       });
 
-      setEmail('');
+      setContactValue('');
       fetchInvitations();
     } catch (error) {
       console.error('Error creating invitation:', error);
@@ -180,6 +186,10 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
   };
 
   const deleteInvitation = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this invitation? This action cannot be undone.')) {
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('survey_invitations')
@@ -204,113 +214,184 @@ export const SurveyInvitations: React.FC<SurveyInvitationsProps> = ({ campaignId
     }
   };
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Survey Invitations</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Create new invitation */}
-        <div className="flex gap-2">
-          <Input
-            type="email"
-            placeholder="Enter email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && createInvitation()}
-          />
-          <Button onClick={createInvitation} disabled={loading}>
-            {loading ? 'Creating...' : 'Create Invitation'}
-          </Button>
-        </div>
+  const getInvitationTypeIcon = (type: string) => {
+    switch (type) {
+      case 'email':
+        return <Mail className="h-4 w-4" />;
+      case 'phone':
+        return <Phone className="h-4 w-4" />;
+      default:
+        return <User className="h-4 w-4" />;
+    }
+  };
 
-        {/* Invitations list */}
+  const getInvitationTypeLabel = (type: string) => {
+    switch (type) {
+      case 'email':
+        return 'Email';
+      case 'phone':
+        return 'Phone';
+      default:
+        return 'Other';
+    }
+  };
+
+  const getContactPlaceholder = () => {
+    switch (invitationType) {
+      case 'email':
+        return 'Enter email address';
+      case 'phone':
+        return 'Enter phone number';
+      default:
+        return 'Enter contact information';
+    }
+  };
+
+  return (
+    <Card className="bg-gradient-card shadow-card border-0">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Mail className="h-5 w-5" />
+          Personal Invitations
+        </CardTitle>
+        <p className="text-muted-foreground mt-1">
+          Create individual invitations for specific users
+        </p>
+      </CardHeader>
+
+      <CardContent className="space-y-6">
+        {/* Create Invitation Form */}
+        <Card className="border border-border">
+          <CardHeader>
+            <CardTitle className="text-lg">Create New Invitation</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="invitation-type">Invitation Type</Label>
+                <Select
+                  value={invitationType}
+                  onValueChange={(value: 'email' | 'phone' | 'other') => setInvitationType(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact-value">{getInvitationTypeLabel(invitationType)} *</Label>
+                <Input
+                  id="contact-value"
+                  value={contactValue}
+                  onChange={(e) => setContactValue(e.target.value)}
+                  placeholder={getContactPlaceholder()}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={createInvitation}
+                disabled={loading || !contactValue.trim()}
+                className="bg-gradient-primary hover:opacity-90"
+              >
+                {loading ? 'Creating...' : 'Create Invitation'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Invitations List */}
         {loadingInvitations ? (
-          <div>Loading invitations...</div>
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <p className="text-muted-foreground mt-2">Loading invitations...</p>
+          </div>
+        ) : invitations.length === 0 ? (
+          <div className="text-center py-8">
+            <Mail className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No invitations created yet</h3>
+            <p className="text-muted-foreground">
+              Create your first invitation to start collecting responses
+            </p>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {invitations.length === 0 ? (
-              <p className="text-muted-foreground">No invitations created yet.</p>
-            ) : (
-              invitations.map((invitation) => {
-                const surveyUrl = generateSurveyUrl(invitation.unique_token);
-                return (
-                  <Card key={invitation.id} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4" />
-                          <span className="font-medium">{invitation.email}</span>
-                          {invitation.responded_at && (
-                            <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
-                              Completed
-                            </Badge>
-                          )}
-                          {invitation.sent_at && !invitation.responded_at && (
-                            <Badge variant="outline" className="border-orange-200 text-orange-700">
-                              Pending
-                            </Badge>
-                          )}
-                          {!invitation.sent_at && !invitation.responded_at && (
-                            <Badge variant="outline">Not Sent</Badge>
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground space-y-1">
-                          <div>Created: {new Date(invitation.created_at).toLocaleDateString()}</div>
-                          {invitation.responded_at && (
-                            <div>Completed: {new Date(invitation.responded_at).toLocaleDateString()}</div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <code className="bg-muted px-2 py-1 rounded text-xs">
-                            {surveyUrl}
-                          </code>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyToClipboard(surveyUrl)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {invitation.qr_code_url && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              const link = document.createElement('a');
-                              link.href = invitation.qr_code_url!;
-                              link.download = `qr-${invitation.email}.png`;
-                              link.click();
-                            }}
-                          >
-                            <QrCode className="h-4 w-4" />
-                          </Button>
+          <div className="space-y-4">
+            {invitations.map((invitation) => (
+              <Card key={invitation.id} className="border border-border">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        {getInvitationTypeIcon(invitation.invitation_type)}
+                        <span className="font-semibold">{invitation.contact_value}</span>
+                        <Badge variant="outline">
+                          {getInvitationTypeLabel(invitation.invitation_type)}
+                        </Badge>
+                        {invitation.hasSubmission && (
+                          <Badge variant="default" className="bg-green-500">
+                            Completed
+                          </Badge>
                         )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => deleteInvitation(invitation.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <span>Created: {new Date(invitation.created_at).toLocaleDateString()}</span>
+                        {invitation.sent_at && (
+                          <span>Sent: {new Date(invitation.sent_at).toLocaleDateString()}</span>
+                        )}
+                        {invitation.responded_at && (
+                          <span>Responded: {new Date(invitation.responded_at).toLocaleDateString()}</span>
+                        )}
                       </div>
                     </div>
-                    {invitation.qr_code_url && (
-                      <div className="mt-3 pt-3 border-t">
-                        <img
-                          src={invitation.qr_code_url}
-                          alt="QR Code"
-                          className="w-32 h-32 border rounded"
-                        />
-                      </div>
-                    )}
-                  </Card>
-                );
-              })
-            )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(generateSurveyUrl(invitation.unique_token))}
+                      >
+                        <Copy className="h-4 w-4 mr-1" />
+                        Copy Link
+                      </Button>
+                      {invitation.qr_code_url && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const newWindow = window.open();
+                            if (newWindow) {
+                              newWindow.document.write(`
+                                <html>
+                                  <head><title>QR Code - ${invitation.contact_value}</title></head>
+                                  <body style="display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+                                    <img src="${invitation.qr_code_url}" alt="QR Code" style="max-width: 100%; height: auto;" />
+                                  </body>
+                                </html>
+                              `);
+                            }
+                          }}
+                        >
+                          <QrCode className="h-4 w-4 mr-1" />
+                          QR Code
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => deleteInvitation(invitation.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
       </CardContent>
