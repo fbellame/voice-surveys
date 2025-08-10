@@ -131,6 +131,16 @@ export default function EditCampaign() {
   const onSubmit = async (data: CampaignFormData) => {
     if (!id) return;
 
+    // Validate that end date is after start date
+    if (data.start_date && data.end_date && new Date(data.end_date) <= new Date(data.start_date)) {
+      toast({
+        title: "Validation Error",
+        description: "End date must be after start date",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('campaign')
@@ -138,8 +148,8 @@ export default function EditCampaign() {
           name: data.name,
           description: data.description,
           campaign_type: data.campaign_type,
-          start_date: data.start_date || null,
-          end_date: data.end_date || null,
+          start_date: data.start_date,
+          end_date: data.end_date,
           greeting: data.greeting,
           intro_prompt: data.intro_prompt,
           purpose_explanation: data.purpose_explanation,
@@ -357,11 +367,12 @@ export default function EditCampaign() {
                       <FormField
                         control={form.control}
                         name="start_date"
+                        rules={{ required: "Start date is required" }}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Start Date</FormLabel>
+                            <FormLabel>Start Date *</FormLabel>
                             <FormControl>
-                              <Input type="date" {...field} />
+                              <Input type="date" {...field} required />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -371,11 +382,12 @@ export default function EditCampaign() {
                       <FormField
                         control={form.control}
                         name="end_date"
+                        rules={{ required: "End date is required" }}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>End Date</FormLabel>
+                            <FormLabel>End Date *</FormLabel>
                             <FormControl>
-                              <Input type="date" {...field} />
+                              <Input type="date" {...field} required />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
