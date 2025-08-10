@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
-
+import { formatQuestionWithContext } from "@/lib/questionUtils";
 
 export default function CreateCampaign() {
   const navigate = useNavigate();
@@ -34,8 +34,12 @@ export default function CreateCampaign() {
     campaign_uri: ""
   });
 
-  // Questions state
-  const [questions, setQuestions] = useState([{ question_text: "", question_order: 1 }]);
+  // Questions state with context
+  const [questions, setQuestions] = useState([{ 
+    question_text: "", 
+    context: "",
+    question_order: 1 
+  }]);
 
   const handleCampaignFormChange = (field: string, value: string) => {
     setCampaignForm(prev => {
@@ -56,8 +60,18 @@ export default function CreateCampaign() {
     setQuestions(newQuestions);
   };
 
+  const handleContextChange = (index: number, value: string) => {
+    const newQuestions = [...questions];
+    newQuestions[index].context = value;
+    setQuestions(newQuestions);
+  };
+
   const addQuestion = () => {
-    setQuestions([...questions, { question_text: "", question_order: questions.length + 1 }]);
+    setQuestions([...questions, { 
+      question_text: "", 
+      context: "",
+      question_order: questions.length + 1 
+    }]);
   };
 
   const removeQuestion = (index: number) => {
@@ -68,7 +82,6 @@ export default function CreateCampaign() {
       setQuestions(newQuestions);
     }
   };
-
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,12 +128,12 @@ export default function CreateCampaign() {
 
       if (campaignError) throw campaignError;
 
-      // Create questions
+      // Create questions with context formatting
       const questionsToInsert = questions
         .filter(q => q.question_text.trim())
         .map(q => ({
           campaign_id: campaign.id,
-          question_text: q.question_text,
+          question_text: formatQuestionWithContext(q.question_text, q.context),
           question_order: q.question_order
         }));
 
@@ -144,7 +157,6 @@ export default function CreateCampaign() {
 
         if (roomMappingError) throw roomMappingError;
       }
-
 
       toast({
         title: "Success",
@@ -356,24 +368,42 @@ export default function CreateCampaign() {
             </CardHeader>
             <CardContent className="space-y-4">
               {questions.map((question, index) => (
-                <div key={index} className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <Input
-                      value={question.question_text}
-                      onChange={(e) => handleQuestionChange(index, e.target.value)}
-                      placeholder={`Question ${index + 1}`}
-                    />
+                <div key={index} className="space-y-3 p-4 border rounded-lg bg-background/50">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <Label htmlFor={`question-${index}`}>Question {index + 1}</Label>
+                      <Input
+                        id={`question-${index}`}
+                        value={question.question_text}
+                        onChange={(e) => handleQuestionChange(index, e.target.value)}
+                        placeholder={`Question ${index + 1}`}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => removeQuestion(index)}
+                      disabled={questions.length === 1}
+                      className="hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeQuestion(index)}
-                    disabled={questions.length === 1}
-                    className="hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex-1">
+                    <Label htmlFor={`context-${index}`}>Context (Optional)</Label>
+                    <Textarea
+                      id={`context-${index}`}
+                      value={question.context}
+                      onChange={(e) => handleContextChange(index, e.target.value)}
+                      placeholder="Provide context to help explain this question..."
+                      rows={2}
+                      className="text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This context will be used to provide additional information about the question
+                    </p>
+                  </div>
                 </div>
               ))}
             </CardContent>
