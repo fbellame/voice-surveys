@@ -256,15 +256,24 @@ export function useLiveKit() {
     }
   }, [localParticipant, isMuted]);
 
+  // Helper function to strip context from question text
+  const stripContext = useCallback((text: string) => {
+    if (!text) return text;
+    // Remove [CONTEXT:...] pattern from the beginning or anywhere in the text
+    return text.replace(/\[CONTEXT:[^\]]*\]/g, '').trim();
+  }, []);
+
   // Helper functions for easier access to survey data
   const getCurrentQuestion = useCallback(() => {
     const currentQuestionNum = parseInt(surveyProgress.currentQuestionNumber || '0');
+    const rawText = surveyProgress.currentQuestionText;
     return {
       number: surveyProgress.currentQuestionNumber,
-      text: surveyProgress.currentQuestionText,
+      text: rawText ? stripContext(rawText) : rawText,
+      rawText: rawText, // Keep original text with context for reference
       isAnswered: currentQuestionNum > 0 && currentQuestionNum <= surveyProgress.answeredQuestions
     };
-  }, [surveyProgress]);
+  }, [surveyProgress, stripContext]);
 
   const getProgressStats = useCallback(() => {
     return {
