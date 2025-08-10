@@ -13,6 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
 import { Save, Plus, Trash2, ArrowLeft } from "lucide-react";
+import { formatQuestionWithContext, parseQuestionAndContext } from "@/lib/questionUtils";
 
 interface Campaign {
   id: number;
@@ -33,6 +34,7 @@ interface Question {
   question_text: string;
   question_order: number;
   campaign_id: number;
+  context?: string;
 }
 
 interface CampaignFormData {
@@ -84,6 +86,16 @@ export default function EditCampaign() {
 
         if (questionsError) throw questionsError;
 
+        // Parse questions to extract context
+        const parsedQuestions = (questionsData || []).map(q => {
+          const { question, context } = parseQuestionAndContext(q.question_text);
+          return {
+            ...q,
+            question_text: question,
+            context: context
+          };
+        });
+
         // Fetch room mapping
         const { data: roomMappingData, error: roomMappingError } = await supabase
           .from('campaign_room_mapping')
@@ -95,7 +107,7 @@ export default function EditCampaign() {
         if (roomMappingError) throw roomMappingError;
 
         setCampaign({...(campaignData as any), campaign_uri: (campaignData as any).campaign_uri || null});
-        setQuestions(questionsData || []);
+        setQuestions(parsedQuestions);
         setRoomPattern(roomMappingData?.room_pattern || '');
 
         // Set form values
@@ -199,6 +211,7 @@ export default function EditCampaign() {
     setQuestions([...questions, {
       id: Date.now(), // Temporary ID
       question_text: '',
+      context: '',
       question_order: newOrder,
       campaign_id: parseInt(id || '0'),
     }]);
@@ -207,6 +220,12 @@ export default function EditCampaign() {
   const updateQuestion = (index: number, text: string) => {
     const updated = [...questions];
     updated[index].question_text = text;
+    setQuestions(updated);
+  };
+
+  const updateContext = (index: number, context: string) => {
+    const updated = [...questions];
+    updated[index].context = context;
     setQuestions(updated);
   };
 
@@ -224,12 +243,12 @@ export default function EditCampaign() {
         .delete()
         .eq('campaign_id', parseInt(id));
 
-      // Insert new questions
+      // Insert new questions with context formatting
       const questionsToInsert = questions
         .filter(q => q.question_text.trim())
         .map((q, index) => ({
           campaign_id: parseInt(id),
-          question_text: q.question_text,
+          question_text: formatQuestionWithContext(q.question_text, q.context || ''),
           question_order: index + 1,
         }));
 
@@ -505,24 +524,40 @@ export default function EditCampaign() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {questions.map((question, index) => (
-                  <div key={index} className="flex gap-4 items-center">
-                    <div className="flex-1">
-                      <Label htmlFor={`question-${index}`}>Question {index + 1}</Label>
-                      <Input
-                        id={`question-${index}`}
-                        value={question.question_text}
-                        onChange={(e) => updateQuestion(index, e.target.value)}
-                        placeholder="Enter your question..."
-                      />
+                  <div key={index} className="space-y-3 p-4 border rounded-lg bg-background/50">
+                    <div className="flex gap-4 items-center">
+                      <div className="flex-1">
+                        <Label htmlFor={`question-${index}`}>Question {index + 1}</Label>
+                        <Input
+                          id={`question-${index}`}
+                          value={question.question_text}
+                          onChange={(e) => updateQuestion(index, e.target.value)}
+                          placeholder="Enter your question..."
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeQuestion(index)}
+                        className="hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeQuestion(index)}
-                      className="hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex-1">
+                      <Label htmlFor={`context-${index}`}>Context (Optional)</Label>
+                      <Textarea
+                        id={`context-${index}`}
+                        value={question.context || ''}
+                        onChange={(e) => updateContext(index, e.target.value)}
+                        placeholder="Provide context to help explain this question..."
+                        rows={2}
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        This context will be used to provide additional information about the question
+                      </p>
+                    </div>
                   </div>
                 ))}
                 

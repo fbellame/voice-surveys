@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Users, Mail, CheckCircle, Clock, MapPin, Briefcase, Phone, Link, BarChart3 } from "lucide-react";
 import { format } from "date-fns";
+import { displayQuestionWithContext } from "@/lib/questionUtils";
 
 interface CampaignOption {
   id: number;
@@ -85,11 +86,12 @@ interface Respondent {
   roomName: string | null;
   linkType: 'generic' | 'personal';
   linkName?: string;
-  answers: Array<{
-    questionText: string;
-    answerText: string;
-    questionOrder: number;
-  }>;
+            answers: Array<{
+            questionText: string;
+            answerText: string;
+            questionOrder: number;
+            originalQuestionText: string;
+          }>;
 }
 
 interface ResponseAnalytics {
@@ -254,11 +256,15 @@ export default function Analytics() {
           roomName: submission.room_name,
           linkType: submission.link_type as 'generic' | 'personal',
           linkName: genericLink?.name || undefined,
-          answers: (submission.answer || []).map(ans => ({
-            questionText: ans.question.question_text,
-            answerText: ans.answer_text,
-            questionOrder: ans.question.question_order
-          }))
+          answers: (submission.answer || []).map(ans => {
+            const { question } = displayQuestionWithContext(ans.question.question_text);
+            return {
+              questionText: question,
+              answerText: ans.answer_text,
+              questionOrder: ans.question.question_order,
+              originalQuestionText: ans.question.question_text
+            };
+          })
         };
       });
 
@@ -532,12 +538,21 @@ export default function Analytics() {
                               <div className="space-y-4">
                                 {respondent.answers
                                   .sort((a, b) => a.questionOrder - b.questionOrder)
-                                  .map((answer, index) => (
-                                    <div key={index} className="border-l-2 border-primary pl-4">
-                                      <h4 className="font-medium mb-1">{answer.questionText}</h4>
-                                      <p className="text-muted-foreground">{answer.answerText}</p>
-                                    </div>
-                                  ))}
+                                  .map((answer, index) => {
+                                    const { question, context } = displayQuestionWithContext(answer.originalQuestionText);
+                                    
+                                    return (
+                                      <div key={index} className="border-l-2 border-primary pl-4">
+                                        <h4 className="font-medium mb-1">{question}</h4>
+                                        {context && (
+                                          <p className="text-xs text-muted-foreground mb-1 italic">
+                                            Context: {context}
+                                          </p>
+                                        )}
+                                        <p className="text-muted-foreground">{answer.answerText}</p>
+                                      </div>
+                                    );
+                                  })}
                               </div>
                             )}
                           </CardContent>

@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Download, Filter, Search, Play, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
+import { displayQuestionWithContext } from "@/lib/questionUtils";
 
 interface UserProfile {
   id: string;
@@ -311,6 +312,8 @@ export default function Answers() {
         ]);
       } else {
         response.answers.forEach(answer => {
+          const { question, context } = displayQuestionWithContext(answer.question.question_text);
+          const questionWithContext = context ? `${question} (Context: ${context})` : question;
           csvData.push([
             response.id.toString(),
             response.campaign.name,
@@ -318,7 +321,7 @@ export default function Answers() {
             format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
             response.phone_number || '-',
             response.room_name,
-            answer.question.question_text,
+            questionWithContext,
             answer.answer_text,
             answer.question.question_order.toString()
           ]);
@@ -525,20 +528,30 @@ export default function Answers() {
                       {expandedRows.has(response.id) && response.answers.length > 0 && (
                         <div className="mt-4 pt-4 border-t">
                           <div className="space-y-3">
-                            {response.answers.map((answer) => (
-                              <div key={answer.id} className="bg-muted/50 rounded-lg p-3">
-                                <div className="flex justify-between items-start mb-2">
-                                  <p className="font-medium text-sm">{answer.question.question_text}</p>
-                                  <span className="text-xs text-muted-foreground ml-2">
-                                    #{answer.question.question_order}
-                                  </span>
+                            {response.answers.map((answer) => {
+                              const { question, context } = displayQuestionWithContext(answer.question.question_text);
+                              return (
+                                <div key={answer.id} className="bg-muted/50 rounded-lg p-3">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex-1">
+                                      <p className="font-medium text-sm">{question}</p>
+                                      {context && (
+                                        <p className="text-xs text-muted-foreground mt-1 italic">
+                                          Context: {context}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span className="text-xs text-muted-foreground ml-2">
+                                      #{answer.question.question_order}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm">{answer.answer_text}</p>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {format(new Date(answer.answered_at), 'dd/MM/yyyy HH:mm')}
+                                  </p>
                                 </div>
-                                <p className="text-sm">{answer.answer_text}</p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {format(new Date(answer.answered_at), 'dd/MM/yyyy HH:mm')}
-                                </p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
