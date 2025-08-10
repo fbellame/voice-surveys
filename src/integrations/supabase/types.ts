@@ -19,42 +19,42 @@ export type Database = {
           answer_text: string
           answered_at: string | null
           created_at: string | null
-          id: number
+          id: string
           question_id: number
-          survey_response_id: number
+          survey_submission_id: string
           updated_at: string | null
         }
         Insert: {
           answer_text: string
           answered_at?: string | null
           created_at?: string | null
-          id?: number
+          id?: string
           question_id: number
-          survey_response_id: number
+          survey_submission_id: string
           updated_at?: string | null
         }
         Update: {
           answer_text?: string
           answered_at?: string | null
           created_at?: string | null
-          id?: number
+          id?: string
           question_id?: number
-          survey_response_id?: number
+          survey_submission_id?: string
           updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "answer_call_id_fkey"
-            columns: ["survey_response_id"]
-            isOneToOne: false
-            referencedRelation: "survey_response"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "answer_question_id_fkey"
             columns: ["question_id"]
             isOneToOne: false
             referencedRelation: "question"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "answer_survey_submission_id_fkey"
+            columns: ["survey_submission_id"]
+            isOneToOne: false
+            referencedRelation: "survey_submissions"
             referencedColumns: ["id"]
           },
         ]
@@ -108,7 +108,68 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "campaign_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_links: {
+        Row: {
+          id: string
+          campaign_id: number
+          link_type: string
+          unique_token: string
+          name: string | null
+          description: string | null
+          is_active: boolean
+          max_responses: number | null
+          current_responses: number
+          created_at: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          id?: string
+          campaign_id: number
+          link_type?: string
+          unique_token?: string
+          name?: string | null
+          description?: string | null
+          is_active?: boolean
+          max_responses?: number | null
+          current_responses?: number
+          created_at?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          id?: string
+          campaign_id?: number
+          link_type?: string
+          unique_token?: string
+          name?: string | null
+          description?: string | null
+          is_active?: boolean
+          max_responses?: number | null
+          current_responses?: number
+          created_at?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_links_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       campaign_room_mapping: {
         Row: {
@@ -182,38 +243,41 @@ export type Database = {
       }
       survey_invitations: {
         Row: {
-          campaign_id: number
-          created_at: string
-          email: string
           id: string
-          qr_code_url: string | null
-          responded_at: string | null
-          sent_at: string | null
+          campaign_id: number
+          invitation_type: string
+          contact_value: string
           unique_token: string
+          qr_code_url: string | null
+          sent_at: string | null
+          responded_at: string | null
+          created_at: string
           updated_at: string
           user_id: string | null
         }
         Insert: {
-          campaign_id: number
-          created_at?: string
-          email: string
           id?: string
-          qr_code_url?: string | null
-          responded_at?: string | null
-          sent_at?: string | null
+          campaign_id: number
+          invitation_type?: string
+          contact_value: string
           unique_token?: string
+          qr_code_url?: string | null
+          sent_at?: string | null
+          responded_at?: string | null
+          created_at?: string
           updated_at?: string
           user_id?: string | null
         }
         Update: {
-          campaign_id?: number
-          created_at?: string
-          email?: string
           id?: string
-          qr_code_url?: string | null
-          responded_at?: string | null
-          sent_at?: string | null
+          campaign_id?: number
+          invitation_type?: string
+          contact_value?: string
           unique_token?: string
+          qr_code_url?: string | null
+          sent_at?: string | null
+          responded_at?: string | null
+          created_at?: string
           updated_at?: string
           user_id?: string | null
         }
@@ -225,59 +289,119 @@ export type Database = {
             referencedRelation: "campaign"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "survey_invitations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      survey_response: {
+      user_profiles: {
         Row: {
-          call_timestamp: string | null
+          id: string
           campaign_id: number
-          created_at: string | null
-          id: number
+          full_name: string | null
+          email: string | null
+          geography: string | null
+          occupation: string | null
+          phone_number: string | null
+          link_token: string
+          link_type: string
           invitation_token: string | null
-          phone_number: string
-          room_name: string
-          s3_recording_url: string | null
-          updated_at: string | null
-          user_id: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          call_timestamp?: string | null
+          id?: string
           campaign_id: number
-          created_at?: string | null
-          id?: number
+          full_name?: string | null
+          email?: string | null
+          geography?: string | null
+          occupation?: string | null
+          phone_number?: string | null
+          link_token: string
+          link_type: string
           invitation_token?: string | null
-          phone_number: string
-          room_name: string
-          s3_recording_url?: string | null
-          updated_at?: string | null
-          user_id?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          call_timestamp?: string | null
+          id?: string
           campaign_id?: number
-          created_at?: string | null
-          id?: number
+          full_name?: string | null
+          email?: string | null
+          geography?: string | null
+          occupation?: string | null
+          phone_number?: string | null
+          link_token?: string
+          link_type?: string
           invitation_token?: string | null
-          phone_number?: string
-          room_name?: string
-          s3_recording_url?: string | null
-          updated_at?: string | null
-          user_id?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "call_campaign_id_fkey"
+            foreignKeyName: "user_profiles_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaign"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      survey_submissions: {
+        Row: {
+          id: string
+          campaign_id: number
+          user_profile_id: string | null
+          room_name: string | null
+          link_token: string
+          link_type: string
+          s3_recording_url: string | null
+          created_at: string
+          updated_at: string
+          call_timestamp: string | null
+        }
+        Insert: {
+          id?: string
+          campaign_id: number
+          user_profile_id?: string | null
+          room_name?: string | null
+          link_token: string
+          link_type: string
+          s3_recording_url?: string | null
+          created_at?: string
+          updated_at?: string
+          call_timestamp?: string | null
+        }
+        Update: {
+          id?: string
+          campaign_id?: number
+          user_profile_id?: string | null
+          room_name?: string | null
+          link_token?: string
+          link_type?: string
+          s3_recording_url?: string | null
+          created_at?: string
+          updated_at?: string
+          call_timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "survey_submissions_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaign"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "survey_response_invitation_token_fkey"
-            columns: ["invitation_token"]
+            foreignKeyName: "survey_submissions_user_profile_id_fkey"
+            columns: ["user_profile_id"]
             isOneToOne: false
-            referencedRelation: "survey_invitations"
-            referencedColumns: ["unique_token"]
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
           },
         ]
       }

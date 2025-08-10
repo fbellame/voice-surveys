@@ -12,12 +12,28 @@ import { useAuth } from "@/hooks/useAuth";
 import { Download, Filter, Search, Play, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 
+interface UserProfile {
+  id: string;
+  campaign_id: number;
+  full_name: string | null;
+  email: string | null;
+  geography: string | null;
+  occupation: string | null;
+  phone_number: string | null;
+  link_token: string;
+  link_type: string;
+  invitation_token: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface SurveyResponse {
   id: string;
-  phone_number: string;
+  phone_number: string | null;
   room_name: string;
   call_timestamp: string;
   s3_recording_url?: string;
+  user_profile?: UserProfile;
   campaign: {
     id: number;
     name: string;
@@ -41,6 +57,16 @@ interface Campaign {
   id: number;
   name: string;
   campaign_type: string;
+}
+
+interface SurveySubmission {
+  id: string;
+  campaign_id: number;
+  user_profile_id: string;
+  room_name: string;
+  call_timestamp: string;
+  s3_recording_url?: string;
+  user_profile?: UserProfile;
 }
 
 export default function Answers() {
@@ -76,16 +102,30 @@ export default function Answers() {
       if (campaignsError) throw campaignsError;
       setCampaigns(campaignsData || []);
 
-      // Fetch survey submissions first
+      // Fetch survey submissions with user profiles
       let submissionsQuery = supabase
-        .from('survey_submissions' as any)
+        .from('survey_submissions')
         .select(`
           id,
-          phone_number,
+          campaign_id,
+          user_profile_id,
           room_name,
           call_timestamp,
           s3_recording_url,
-          campaign_id
+          user_profile:user_profiles (
+            id,
+            campaign_id,
+            full_name,
+            email,
+            geography,
+            occupation,
+            phone_number,
+            link_token,
+            link_type,
+            invitation_token,
+            created_at,
+            updated_at
+          )
         `)
         .order('call_timestamp', { ascending: false });
 
@@ -121,11 +161,11 @@ export default function Answers() {
       if (submissionsError) throw submissionsError;
 
       // Fetch all answers with questions for these submissions
-      const submissionIds = (submissionsData as any)?.map((s: any) => s.id) || [];
+      const submissionIds = submissionsData?.map((s: SurveySubmission) => s.id) || [];
       
-      let answersData: any[] = [];
+      let answersData: Answer[] = [];
       if (submissionIds.length > 0) {
-        const { data: fetchedAnswers, error: answersError } = await (supabase as any)
+        const { data: fetchedAnswers, error: answersError } = await supabase
           .from('answer')
           .select(`
             id,
@@ -145,7 +185,7 @@ export default function Answers() {
       }
 
       // Transform data to match our interface
-      const transformedData: SurveyResponse[] = (submissionsData as any)?.map((submission: any) => {
+      const transformedData: SurveyResponse[] = submissionsData?.map((submission: SurveySubmission) => {
         const campaign = campaignsData?.find(c => c.id === submission.campaign_id);
         const submissionAnswers = answersData
           .filter(a => a.survey_submission_id === submission.id)
@@ -153,10 +193,11 @@ export default function Answers() {
 
         return {
           id: submission.id,
-          phone_number: submission.phone_number,
+          phone_number: submission.user_profile?.phone_number || null,
           room_name: submission.room_name,
           call_timestamp: submission.call_timestamp,
           s3_recording_url: submission.s3_recording_url,
+          user_profile: submission.user_profile,
           campaign: {
             id: campaign?.id || submission.campaign_id,
             name: campaign?.name || 'Unknown Campaign',
@@ -186,7 +227,7 @@ export default function Answers() {
     const searchLower = searchQuery.toLowerCase();
     return (
       response.campaign.name.toLowerCase().includes(searchLower) ||
-      response.phone_number.includes(searchQuery) ||
+      (response.phone_number && response.phone_number.includes(searchQuery)) ||
       response.room_name.toLowerCase().includes(searchLower) ||
       response.answers.some(answer => 
         answer.answer_text.toLowerCase().includes(searchLower) ||
@@ -262,7 +303,7 @@ export default function Answers() {
           response.campaign.name,
             response.campaign.campaign_type === 'web_survey' ? 'Web Survey' : 'Phone Survey',
           format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
-          response.phone_number,
+          response.phone_number || '-',
           response.room_name,
           '-',
           '-',
@@ -275,7 +316,7 @@ export default function Answers() {
             response.campaign.name,
             response.campaign.campaign_type === 'web_survey' ? 'Web Survey' : 'Phone Survey',
             format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
-            response.phone_number,
+            response.phone_number || '-',
             response.room_name,
             answer.question.question_text,
             answer.answer_text,
@@ -305,6 +346,7 @@ export default function Answers() {
       phone_number: response.phone_number,
       room_name: response.room_name,
       s3_recording_url: response.s3_recording_url,
+      user_profile: response.user_profile,
       answers: response.answers.map(answer => ({
         question: answer.question.question_text,
         answer: answer.answer_text,
@@ -457,7 +499,7 @@ export default function Answers() {
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm')} • 
-                              {response.campaign.campaign_type === 'phone_survey' ? ` ${response.phone_number}` : ` ${response.room_name}`}
+                              {response.campaign.campaign_type === 'phone_survey' ? ` ${response.phone_number || 'N/A'}` : ` ${response.room_name}`}
                             </p>
                           </div>
                         </div>
