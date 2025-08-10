@@ -72,6 +72,36 @@ export default function CreateCampaign() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate required fields
+    if (!campaignForm.start_date.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Start date is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!campaignForm.end_date.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "End date is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate that end date is after start date
+    if (new Date(campaignForm.end_date) <= new Date(campaignForm.start_date)) {
+      toast({
+        title: "Validation Error",
+        description: "End date must be after start date",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -211,21 +241,23 @@ export default function CreateCampaign() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="start_date">Start Date</Label>
+                  <Label htmlFor="start_date">Start Date *</Label>
                   <Input
                     id="start_date"
                     type="date"
                     value={campaignForm.start_date}
                     onChange={(e) => handleCampaignFormChange('start_date', e.target.value)}
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="end_date">End Date</Label>
+                  <Label htmlFor="end_date">End Date *</Label>
                   <Input
                     id="end_date"
                     type="date"
                     value={campaignForm.end_date}
                     onChange={(e) => handleCampaignFormChange('end_date', e.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -360,7 +392,7 @@ export default function CreateCampaign() {
             </Button>
             <Button
               type="submit"
-              disabled={loading || !campaignForm.name.trim()}
+              disabled={loading || !campaignForm.name.trim() || !campaignForm.start_date.trim() || !campaignForm.end_date.trim()}
               className="bg-gradient-primary hover:opacity-90 transition-opacity"
             >
               {loading ? "Creating..." : "Create Campaign"}
