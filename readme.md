@@ -11,15 +11,26 @@ git clone https://github.com/fbellame/futures_survey.git
 
 cd futures_survey
 
-git checkout sql-storage
-
 nano .env
 #copier coller les variables d'env
 
 # build and run docker image future-survey
 docker build -t future-survey .
 
+# with docker without systemd (for test)
 docker run -p 8081:8081 --env-file .env future-survey
+
+## with systemd (more stable because survive VM reboot)
+cp livekit-agent@.service /etc/systemd/system/
+
+# add env variable
+nano /etc/future-survey-agent.env
+
+# launch and monitor logs
+sudo systemctl daemon-reload
+sudo systemctl enable --now livekit-agent@1
+docker logs -f future-survey-agent-1
+
 ```
 
 # Multi-Campaign Survey Agent Architecture
