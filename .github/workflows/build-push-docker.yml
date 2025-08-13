@@ -10,6 +10,7 @@ env:
   IMAGE_NAME: ${{ vars.IMAGE_NAME || 'docker.io/fbellame/future-survey' }}
   DOCKERFILE: ./Dockerfile     # change if not at repo root
   CONTEXT: .                   # change if building from subdir
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || 'fbellame' }}  # use env not secret
 
 jobs:
   build:
