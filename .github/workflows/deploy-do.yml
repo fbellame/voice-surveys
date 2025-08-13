@@ -180,44 +180,44 @@ jobs:
         run: |
           IP=${{ steps.ip.outputs.ip }}
 
-          # Pass env into the remote shell explicitly so set -u doesn't fail.
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes \
-            DOCKER_IMAGE="${DOCKER_IMAGE}" \
-            APP_PORT="${APP_PORT}" \
-            DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME}" \
-            DOCKERHUB_TOKEN="${DOCKERHUB_TOKEN}" \
-            root@$IP bash -s <<'EOF'
-            set -euo pipefail
+          # Export env in the remote shell, THEN feed the script on stdin.
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
+            "export DOCKER_IMAGE='${DOCKER_IMAGE}'; \
+            export APP_PORT='${APP_PORT}'; \
+            export DOCKERHUB_USERNAME='${DOCKERHUB_USERNAME}'; \
+            export DOCKERHUB_TOKEN='${DOCKERHUB_TOKEN}'; \
+            bash -s" <<'REMOTE'
+          set -euo pipefail
 
-            # 1) Install env file
-            mv /tmp/future-survey-agent.env /etc/future-survey-agent.env
-            chmod 600 /etc/future-survey-agent.env
+          # 1) Env file
+          mv /tmp/future-survey-agent.env /etc/future-survey-agent.env
+          chmod 600 /etc/future-survey-agent.env
 
-            # 2) Install systemd unit (ensure lowercase filename)
-            mv /tmp/livekit-agent@.service /etc/systemd/system/livekit-agent@.service
-            chmod 644 /etc/systemd/system/livekit-agent@.service
+          # 2) Systemd unit (ensure lowercase filename)
+          mv /tmp/livekit-agent@.service /etc/systemd/system/livekit-agent@.service
+          chmod 644 /etc/systemd/system/livekit-agent@.service
 
-            # 3) Add a unit drop-in with DOCKER_IMAGE and APP_PORT (preferred over Manager DefaultEnvironment)
-            install -d -m 0755 /etc/systemd/system/livekit-agent@.service.d
-            cat >/etc/systemd/system/livekit-agent@.service.d/10-env.conf <<ENVEOF
-            [Service]
-            Environment=DOCKER_IMAGE=${DOCKER_IMAGE}
-            Environment=APP_PORT=${APP_PORT}
-            ENVEOF
+          # 3) Drop-in with DOCKER_IMAGE & APP_PORT
+          install -d -m 0755 /etc/systemd/system/livekit-agent@.service.d
+          cat >/etc/systemd/system/livekit-agent@.service.d/10-env.conf <<EOF
+          [Service]
+          Environment=DOCKER_IMAGE=${DOCKER_IMAGE}
+          Environment=APP_PORT=${APP_PORT}
+          EOF
 
-            systemctl daemon-reload
+          systemctl daemon-reload
 
-            # 4) (Optional) Docker Hub login for private images
-            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-            fi
+          # 4) (Optional) Docker Hub login
+          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          fi
 
-            # 5) Enable & start
-            systemctl enable --now livekit-agent@1
+          # 5) Enable & start
+          systemctl enable --now livekit-agent@1
 
-            # 6) Show status quickly
-            systemctl status --no-pager livekit-agent@1 || true
-            EOF
+          # 6) Show status
+          systemctl status --no-pager livekit-agent@1 || true
+          REMOTE
 
       - name: Tail first logs
         run: |
