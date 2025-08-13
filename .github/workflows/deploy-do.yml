@@ -49,27 +49,50 @@ jobs:
         run: |
           set -euo pipefail
 
-          KEY_NAME="gh-${GITHUB_REPOSITORY%-*}-${GITHUB_RUN_ID}"
+          KEY_NAME="gh-${GITHUB_REPOSITORY}-${GITHUB_RUN_ID}"
 
-          # Get the MD5 fingerprint of the local public key (same format DO stores)
-          PUB_FP=$(ssh-keygen -lf ~/.ssh/id_ed25519.pub -E md5 | awk '{print $2}' | sed 's/^MD5://')
+          # DO fingerprints are MD5 (colon-separated). Strip the "MD5:" prefix.
+          PUB_FP=$(ssh-keygen -E md5 -lf ~/.ssh/id_ed25519.pub | awk '{print $2}' | sed 's/^MD5://')
 
-          # Try to find an existing key with the same fingerprint
-          EXIST_ID=$(doctl compute ssh-key list --no-header --format ID,Fingerprint \
-            | awk -v fp="$PUB_FP" '$2==fp {print $1; exit}')
+          echo "Local public key MD5 fingerprint: $PUB_FP"
+
+          # 1) Try to fetch by fingerprint (most reliable)
+          EXIST_ID=$(doctl compute ssh-key get "$PUB_FP" --format ID --no-header 2>/dev/null || true)
 
           if [ -n "${EXIST_ID:-}" ]; then
-            echo "Found existing key with fingerprint $PUB_FP (ID: $EXIST_ID)"
+            echo "Found existing DO SSH key (ID: $EXIST_ID)"
             echo "key_id=$EXIST_ID" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "No existing key with fingerprint $PUB_FP; creating a new one..."
-          NEW_ID=$(doctl compute ssh-key create "$KEY_NAME" \
+          echo "No key with fingerprint $PUB_FP in DO; creating..."
+          set +e
+          CREATE_OUT=$(doctl compute ssh-key create "$KEY_NAME" \
             --public-key "$(cat ~/.ssh/id_ed25519.pub)" \
-            --format ID --no-header)
-          echo "key_id=$NEW_ID" >> $GITHUB_OUTPUT
+            --format ID --no-header 2>&1)
+          STATUS=$?
+          set -e
 
+          if [ $STATUS -eq 0 ]; then
+            # Created successfully; CREATE_OUT is the ID
+            echo "Created new DO SSH key (ID: $CREATE_OUT)"
+            echo "key_id=$CREATE_OUT" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # If creation failed (e.g., 422 already exists), try to fetch again by fingerprint
+          echo "Create failed (likely exists). Re-fetching by fingerprint..."
+          EXIST_ID=$(doctl compute ssh-key get "$PUB_FP" --format ID --no-header 2>/dev/null || true)
+          if [ -n "${EXIST_ID:-}" ]; then
+            echo "Recovered existing DO SSH key (ID: $EXIST_ID)"
+            echo "key_id=$EXIST_ID" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "ERROR: Could not create or fetch the SSH key. Full output:"
+          echo "$CREATE_OUT" >&2
+          exit 1
+    
       - name: Optionally delete existing droplet
         if: ${{ github.event.inputs.recreate == 'true' }}
         run: |
