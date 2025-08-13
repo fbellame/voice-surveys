@@ -44,17 +44,31 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           chmod 644 ~/.ssh/id_ed25519.pub
 
-      - name: Ensure SSH key exists in DigitalOcean
+      - name: Ensure/Fetch SSH key ID from DigitalOcean
         id: sshkey
         run: |
-          PUB_CONTENT=$(cat ~/.ssh/id_ed25519.pub)
-          EXIST_ID=$(doctl compute ssh-key list --no-header --format ID,PublicKey | awk -v key="$PUB_CONTENT" '$0 ~ key {print $1}' | head -n1)
-          if [ -z "$EXIST_ID" ]; then
-            NEW_ID=$(doctl compute ssh-key create "gh-${GITHUB_REPOSITORY}-${GITHUB_RUN_ID}" --public-key "$PUB_CONTENT" --format ID --no-header)
-            echo "key_id=$NEW_ID" >> $GITHUB_OUTPUT
-          else
+          set -euo pipefail
+
+          KEY_NAME="gh-${GITHUB_REPOSITORY%-*}-${GITHUB_RUN_ID}"
+
+          # Get the MD5 fingerprint of the local public key (same format DO stores)
+          PUB_FP=$(ssh-keygen -lf ~/.ssh/id_ed25519.pub -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+          # Try to find an existing key with the same fingerprint
+          EXIST_ID=$(doctl compute ssh-key list --no-header --format ID,Fingerprint \
+            | awk -v fp="$PUB_FP" '$2==fp {print $1; exit}')
+
+          if [ -n "${EXIST_ID:-}" ]; then
+            echo "Found existing key with fingerprint $PUB_FP (ID: $EXIST_ID)"
             echo "key_id=$EXIST_ID" >> $GITHUB_OUTPUT
+            exit 0
           fi
+
+          echo "No existing key with fingerprint $PUB_FP; creating a new one..."
+          NEW_ID=$(doctl compute ssh-key create "$KEY_NAME" \
+            --public-key "$(cat ~/.ssh/id_ed25519.pub)" \
+            --format ID --no-header)
+          echo "key_id=$NEW_ID" >> $GITHUB_OUTPUT
 
       - name: Optionally delete existing droplet
         if: ${{ github.event.inputs.recreate == 'true' }}
@@ -83,13 +97,14 @@ jobs:
       - name: Get droplet IP
         id: ip
         run: |
-          IP=$(doctl compute droplet list --tag-name "$TAGS" --format Name,PublicIPv4 --no-header | awk -v n="$VM_NAME" '$1==n {print $2}')
+          IP=$(doctl compute droplet get "$VM_NAME" --format PublicIPv4 --no-header)
           if [ -z "$IP" ]; then
             echo "Droplet IP not found" >&2
             exit 1
           fi
           echo "ip=$IP" >> $GITHUB_OUTPUT
           echo "Droplet IP: $IP"
+
 
       - name: Wait for SSH to respond
         run: |
