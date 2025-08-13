@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # This is an example Dockerfile that builds a minimal container for running LK Agents
 # syntax=docker/dockerfile:1
 ARG PYTHON_VERSION=3.10.13
@@ -38,8 +40,15 @@ RUN python -m pip install --user --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# ensure that any dependent models are downloaded at build-time
-RUN python main.py download-files
+# Build-only: provide a fake .env so any dotenv loader sees the vars
+COPY .env.build .env
+
+# Try the download, but do NOT fail the build if it complains about Supabase
+RUN python main.py download-files || echo "Skipping download-files during build (no Supabase)."
+
+# Clean up so the runtime isn't confused by a blank .env
+RUN rm -f .env
+
 
 # expose healthcheck port
 EXPOSE 8081
