@@ -76,3 +76,22 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-trick
 ## Survey invitation response workflow
 
 ![survey](./survey_invitation_response_workflow.png)
+
+## Anonymous Survey Feature
+
+The Voice Survey Hub now supports anonymous surveys through generic links. This allows external applications to conduct surveys without requiring user registration.
+
+### Key Features
+
+- **Anonymous Generic Links**: Create generic links with the `is_anonymous` flag enabled
+- **No User Profiles**: Anonymous surveys don't create user profiles, maximizing participation
+- **API Integration**: Full API support for external applications like Live Chatter
+- **Analytics Support**: Anonymous responses are tracked separately in the analytics dashboard
+
+### Usage
+
+1. **Create Anonymous Link**: When creating a generic link, enable the "Anonymous Survey" option
+2. **External Integration**: Use the provided API endpoints to integrate with your applications
+3. **Track Responses**: View anonymous responses in the analytics dashboard
+
+For detailed API documentation, see [API_INTEGRATION.md](./API_INTEGRATION.md).
