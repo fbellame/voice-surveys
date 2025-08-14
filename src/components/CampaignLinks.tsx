@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Copy, Link, Trash2, Plus, Eye } from 'lucide-react';
@@ -17,6 +18,7 @@ interface CampaignLink {
   is_active: boolean;
   max_responses: number | null;
   current_responses: number;
+  is_anonymous: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -38,7 +40,8 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
     name: '',
     description: '',
     max_responses: '',
-    is_active: true
+    is_active: true,
+    is_anonymous: false
   });
 
   const fetchLinks = async () => {
@@ -93,6 +96,7 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
           description: formData.description.trim() || null,
           max_responses: formData.max_responses ? parseInt(formData.max_responses) : null,
           is_active: formData.is_active,
+          is_anonymous: formData.is_anonymous,
           link_type: 'generic'
         })
         .select()
@@ -110,7 +114,8 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
         name: '',
         description: '',
         max_responses: '',
-        is_active: true
+        is_active: true,
+        is_anonymous: false
       });
       setShowCreateForm(false);
       fetchLinks();
@@ -260,6 +265,22 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
                 />
                 <Label htmlFor="is-active">Active</Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is-anonymous"
+                  checked={formData.is_anonymous}
+                  onChange={(e) => setFormData(prev => ({ ...prev, is_anonymous: e.target.checked }))}
+                  className="rounded"
+                />
+                <Label htmlFor="is-anonymous">Anonymous Survey</Label>
+              </div>
+              {formData.is_anonymous && (
+                <div className="text-sm text-muted-foreground bg-muted p-3 rounded-md">
+                  <p>Anonymous surveys allow respondents to participate without creating user profiles. 
+                  This is ideal for public surveys where you want to maximize participation.</p>
+                </div>
+              )}
               <div className="flex justify-end gap-2">
                 <Button
                   variant="outline"
@@ -313,6 +334,11 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
                         <Badge variant={link.is_active ? "default" : "secondary"}>
                           {link.is_active ? "Active" : "Inactive"}
                         </Badge>
+                        {link.is_anonymous && (
+                          <Badge variant="secondary">
+                            Anonymous
+                          </Badge>
+                        )}
                         {link.max_responses && (
                           <Badge variant="outline">
                             {link.current_responses}/{link.max_responses} responses
