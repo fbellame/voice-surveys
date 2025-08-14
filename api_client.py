@@ -1,0 +1,239 @@
+import os
+import logging
+import aiohttp
+from typing import Optional, List, Dict, Any
+from dotenv import load_dotenv
+
+# Set up logger
+logger = logging.getLogger("futures_survey_api")
+logger.setLevel(logging.INFO)
+
+# Load environment variables
+load_dotenv()
+
+# API configuration from environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+API_KEY = os.getenv("SUPABASE_KEY")  # Use SUPABASE_KEY to store the anon key value
+
+if not SUPABASE_URL:
+    raise ValueError("SUPABASE_URL must be set in environment variables or .env file")
+
+if not API_KEY:
+    raise ValueError("SUPABASE_KEY must be set in environment variables or .env file")
+
+# Construct the API base URL for Supabase Edge Functions
+API_BASE_URL = f"{SUPABASE_URL}/functions/v1/survey-api"
+
+class SurveyAPIClient:
+    """Client for interacting with the Voice Survey Hub API"""
+    
+    def __init__(self, base_url: str = None, api_key: str = None):
+        self.base_url = base_url or API_BASE_URL
+        self.api_key = api_key or API_KEY
+        self.session = None
+        logger.info(f"Initialized API client with base URL: {self.base_url}")
+    
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create aiohttp session"""
+        if self.session is None or self.session.closed:
+            headers = {
+                "Content-Type": "application/json",
+            }
+            # Add Authorization header only if API key is provided
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
+            self.session = aiohttp.ClientSession(headers=headers)
+        return self.session
+    
+    async def close(self):
+        """Close the aiohttp session"""
+        if self.session and not self.session.closed:
+            await self.session.close()
+    
+    async def _make_request(self, method: str, endpoint: str, data: Dict = None, params: Dict = None) -> Dict:
+        """Make HTTP request to the API"""
+        session = await self._get_session()
+        url = f"{self.base_url}{endpoint}"
+        
+        try:
+            if method.upper() == "GET":
+                async with session.get(url, params=params) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            elif method.upper() == "POST":
+                async with session.post(url, json=data, params=params) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            elif method.upper() == "PUT":
+                async with session.put(url, json=data, params=params) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+        except aiohttp.ClientError as e:
+            logger.error(f"API request failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in API request: {e}")
+            raise
+    
+    async def get_campaign_details(self, campaign_uri: str, link_token: str) -> Dict[str, Any]:
+        """Get campaign details and questions via API"""
+        try:
+            endpoint = f"/api/campaigns/{campaign_uri}/details"
+            params = {"token": link_token}
+            
+            response = await self._make_request("GET", endpoint, params=params)
+            logger.info(f"Retrieved campaign details for {campaign_uri}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to get campaign details: {e}")
+            raise
+    
+    async def create_submission(self, campaign_id: int, link_token: str, link_type: str, 
+                               room_name: str = None, s3_recording_url: str = None, 
+                               call_timestamp: str = None) -> Dict[str, Any]:
+        """Create a new survey submission via API"""
+        try:
+            endpoint = "/api/submissions"
+            data = {
+                "campaign_id": campaign_id,
+                "link_token": link_token,
+                "link_type": link_type
+            }
+            
+            # Add optional fields
+            if room_name:
+                data["room_name"] = room_name
+            if s3_recording_url:
+                data["s3_recording_url"] = s3_recording_url
+            if call_timestamp:
+                data["call_timestamp"] = call_timestamp
+            
+            response = await self._make_request("POST", endpoint, data=data)
+            logger.info(f"Created submission with ID: {response.get('submission_id')}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to create submission: {e}")
+            raise
+    
+    async def submit_answers(self, submission_id: str, answers: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Submit answers for a survey submission via API"""
+        try:
+            endpoint = f"/api/submissions/{submission_id}/answers"
+            data = {"answers": answers}
+            
+            response = await self._make_request("POST", endpoint, data=data)
+            logger.info(f"Submitted {len(answers)} answers for submission {submission_id}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to submit answers: {e}")
+            raise
+    
+    async def update_submission_s3_url(self, submission_id: str, s3_recording_url: str) -> Dict[str, Any]:
+        """Update the S3 recording URL for a submission via API"""
+        try:
+            endpoint = f"/api/submissions/{submission_id}"
+            data = {"s3_recording_url": s3_recording_url}
+            
+            response = await self._make_request("PUT", endpoint, data=data)
+            logger.info(f"Updated submission {submission_id} with S3 URL")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to update submission S3 URL: {e}")
+            raise
+    
+    async def get_existing_submission(self, room_name: str) -> Optional[Dict[str, Any]]:
+        """Get existing submission by room name via API"""
+        try:
+            endpoint = "/api/submissions"
+            params = {"room_name": room_name}
+            
+            response = await self._make_request("GET", endpoint, params=params)
+            
+            if response.get("submissions") and len(response["submissions"]) > 0:
+                logger.info(f"Found existing submission for room {room_name}")
+                return response["submissions"][0]
+            else:
+                logger.info(f"No existing submission found for room {room_name}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get existing submission: {e}")
+            return None
+    
+    async def get_existing_answers(self, submission_id: str) -> List[int]:
+        """Get existing question IDs that have been answered for a submission via API"""
+        try:
+            endpoint = f"/api/submissions/{submission_id}/answers"
+            
+            response = await self._make_request("GET", endpoint)
+            
+            if response.get("answers"):
+                question_ids = [answer.get("question_id") for answer in response["answers"] if answer.get("question_id")]
+                logger.info(f"Found {len(question_ids)} existing answers for submission {submission_id}")
+                return question_ids
+            else:
+                logger.info(f"No existing answers found for submission {submission_id}")
+                return []
+        except Exception as e:
+            logger.error(f"Failed to get existing answers: {e}")
+            return []
+
+# Global API client instance
+api_client = SurveyAPIClient()
+
+# Legacy wrapper functions for backward compatibility
+async def get_campaign_by_uri_and_token(campaign_uri: str, link_token: str) -> Dict[str, Any]:
+    """Get campaign details by URI and token"""
+    return await api_client.get_campaign_details(campaign_uri, link_token)
+
+async def record_survey_submission_api(campaign_id: int, link_token: str, link_type: str,
+                                     room_name: str = None, s3_recording_url: str = None,
+                                     call_timestamp: str = None) -> str:
+    """Record a survey submission via API"""
+    response = await api_client.create_submission(
+        campaign_id=campaign_id,
+        link_token=link_token,
+        link_type=link_type,
+        room_name=room_name,
+        s3_recording_url=s3_recording_url,
+        call_timestamp=call_timestamp
+    )
+    return response.get("submission_id")
+
+async def record_answer_api(submission_id: str, question_id: int, answer_text: str) -> bool:
+    """Record a single answer via API"""
+    answer_data = {
+        "question_id": question_id,
+        "answer_text": answer_text
+    }
+    
+    try:
+        await api_client.submit_answers(submission_id, [answer_data])
+        return True
+    except Exception as e:
+        logger.error(f"Failed to record answer: {e}")
+        return False
+
+async def update_submission_s3_url_api(submission_id: str, s3_recording_url: str) -> bool:
+    """Update submission S3 URL via API"""
+    try:
+        await api_client.update_submission_s3_url(submission_id, s3_recording_url)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update submission S3 URL: {e}")
+        return False
+
+async def get_existing_submission_api(room_name: str) -> Optional[Dict[str, Any]]:
+    """Get existing submission by room name via API"""
+    return await api_client.get_existing_submission(room_name)
+
+async def get_existing_answers_api(submission_id: str) -> List[int]:
+    """Get existing answer question IDs via API"""
+    return await api_client.get_existing_answers(submission_id)
+
+# Cleanup function
+async def cleanup_api_client():
+    """Cleanup API client resources"""
+    await api_client.close()

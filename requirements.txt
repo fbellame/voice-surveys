@@ -12,3 +12,4 @@ websockets
 requests
 boto3
 supabase
+aiohttp
