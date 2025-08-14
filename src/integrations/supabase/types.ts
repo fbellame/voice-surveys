@@ -129,6 +129,7 @@ export type Database = {
           is_active: boolean
           max_responses: number | null
           current_responses: number
+          is_anonymous: boolean
           created_at: string
           updated_at: string
           user_id: string | null
@@ -143,6 +144,7 @@ export type Database = {
           is_active?: boolean
           max_responses?: number | null
           current_responses?: number
+          is_anonymous?: boolean
           created_at?: string
           updated_at?: string
           user_id?: string | null
@@ -157,6 +159,7 @@ export type Database = {
           is_active?: boolean
           max_responses?: number | null
           current_responses?: number
+          is_anonymous?: boolean
           created_at?: string
           updated_at?: string
           user_id?: string | null

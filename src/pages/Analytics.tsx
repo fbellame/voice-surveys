@@ -86,12 +86,13 @@ interface Respondent {
   roomName: string | null;
   linkType: 'generic' | 'personal';
   linkName?: string;
-            answers: Array<{
-            questionText: string;
-            answerText: string;
-            questionOrder: number;
-            originalQuestionText: string;
-          }>;
+  isAnonymous: boolean;
+  answers: Array<{
+    questionText: string;
+    answerText: string;
+    questionOrder: number;
+    originalQuestionText: string;
+  }>;
 }
 
 interface ResponseAnalytics {
@@ -175,7 +176,7 @@ export default function Analytics() {
 
       if (genericLinksError) throw genericLinksError;
 
-      // Fetch submissions with user profiles
+      // Fetch submissions with user profiles (left join to handle anonymous submissions)
       const { data: submissions, error: submissionsError } = await supabase
         .from('survey_submissions')
         .select(`
@@ -189,7 +190,7 @@ export default function Analytics() {
           created_at,
           updated_at,
           call_timestamp,
-          user_profile:user_profiles (
+          user_profile:user_profiles!left (
             id,
             campaign_id,
             full_name,
@@ -247,7 +248,7 @@ export default function Analytics() {
         return {
           id: submission.id,
           email: userProfile?.email || null,
-          fullName: userProfile?.full_name || null,
+          fullName: userProfile?.full_name || (submission.user_profile_id ? null : 'Anonymous'),
           geography: userProfile?.geography || null,
           occupation: userProfile?.occupation || null,
           sentAt: invitation?.sent_at || null,
@@ -256,6 +257,7 @@ export default function Analytics() {
           roomName: submission.room_name,
           linkType: submission.link_type as 'generic' | 'personal',
           linkName: genericLink?.name || undefined,
+          isAnonymous: !submission.user_profile_id,
           answers: (submission.answer || []).map(ans => {
             const { question } = displayQuestionWithContext(ans.question.question_text);
             return {
@@ -525,7 +527,7 @@ export default function Analytics() {
                                   {respondent.fullName || 'Anonymous Respondent'}
                                 </CardTitle>
                                 <CardDescription>
-                                  {respondent.email || respondent.phoneNumber || 'No contact info'} • {format(new Date(respondent.respondedAt!), 'MMM dd, yyyy HH:mm')}
+                                  {respondent.isAnonymous ? 'Anonymous Response' : (respondent.email || respondent.phoneNumber || 'No contact info')} • {format(new Date(respondent.respondedAt!), 'MMM dd, yyyy HH:mm')}
                                 </CardDescription>
                               </div>
                               {getLinkTypeBadge(respondent.linkType)}
