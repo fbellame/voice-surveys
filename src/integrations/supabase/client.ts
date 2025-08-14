@@ -2,16 +2,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// Use local development URLs when in development mode
-const isDevelopment = import.meta.env.DEV;
-
-const SUPABASE_URL = isDevelopment 
-  ? "http://127.0.0.1:54321" 
-  : "https://rpgpwailndlmpgufmfzi.supabase.co";
-
-const SUPABASE_PUBLISHABLE_KEY = isDevelopment
-  ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
-  : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZ3B3YWlsbmRsbXBndWZtZnppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NTQ3NzYsImV4cCI6MjA2OTEzMDc3Nn0.EjnuLcjM9Kf9UAX4762nGVMoC-KK1U-ydmypPsfrJs4";
+// Use remote database for hybrid approach (local frontend + remote backend)
+const SUPABASE_URL = "https://rpgpwailndlmpgufmfzi.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZ3B3YWlsbmRsbXBndWZtZnppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NTQ3NzYsImV4cCI6MjA2OTEzMDc3Nn0.EjnuLcjM9Kf9UAX4762nGVMoC-KK1U-ydmypPsfrJs4";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
