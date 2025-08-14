@@ -1,6 +1,6 @@
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Annotated
 
 from dotenv import load_dotenv
@@ -15,14 +15,11 @@ import re
 from user_data import UserData
 from recording import start_s3_recording
 
-# --- Updated imports for DB integration ---
-from db_manager import (
-    record_call, record_answer, 
-    get_campaign_from_db, get_questions_for_campaign, update_call_s3_url,
-    get_campaign_by_room_name, get_campaign_by_id, 
-    get_existing_survey_response, get_existing_survey_submission,
-    record_survey_submission, update_survey_submission_s3_url,
-    get_existing_answers_for_survey_submission
+# --- API integration imports ---
+from api_client import (
+    get_campaign_by_uri_and_token, record_survey_submission_api, record_answer_api,
+    update_submission_s3_url_api, get_existing_submission_api, get_existing_answers_api,
+    cleanup_api_client
 )
 
 load_dotenv()
@@ -35,17 +32,23 @@ logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
     
 RunContext_T = RunContext[UserData]
 
-# These functions are now imported from db_manager.py
+# API-based operations - all database calls now go through the API client
 
-def build_dynamic_prompt_from_db(campaign):
-    """Build dynamic prompt from a specific campaign."""
-    questions = get_questions_for_campaign(campaign["id"])
+def build_dynamic_prompt_from_campaign_data(campaign_data):
+    """Build dynamic prompt from campaign data received from API."""
+    campaign = campaign_data.get("campaign", {})
+    questions = campaign_data.get("questions", [])
+    
     current_time = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
     questions_section = ""
-    for qid, qtext, qorder in questions:
+    for question in questions:
+        qid = question.get("id")
+        qtext = question.get("question_text")
+        qorder = question.get("question_order")
         questions_section += f"\n{qorder}) Question {qorder}:\n   \"{qtext}\"\n"
+    
     prompt = f"""
-{campaign['intro_prompt']}
+{campaign.get('intro_prompt', '')}
 Current date and time: {current_time}
 
 LANGUAGE POLICY
@@ -56,7 +59,7 @@ Never use special characters such as %, $, #, or *.
 SURVEY FLOW (ask only one question at a time)
 
 1) Briefly explain purpose:
-   \"{campaign['purpose_explanation']}\"
+   \"{campaign.get('purpose_explanation', '')}\"
 {questions_section}
 {len(questions) + 3}) Completion check:
    After the recap, call check_survey_complete to ensure all questions were answered.
@@ -144,9 +147,9 @@ async def send_survey_status(ctx: RunContext_T, status: str, message: str = ""):
 
 
 class MainAgent(Agent):
-    def __init__(self, campaign, questions) -> None:
-        MAIN_PROMPT, self.campaign, self.questions = build_dynamic_prompt_from_db(campaign)
-        logger.info(f"MainAgent initialized for campaign '{campaign['name']}' with dynamic prompt: %s", MAIN_PROMPT)
+    def __init__(self, campaign_data) -> None:
+        MAIN_PROMPT, self.campaign, self.questions = build_dynamic_prompt_from_campaign_data(campaign_data)
+        logger.info(f"MainAgent initialized for campaign '{self.campaign.get('name', 'Unknown')}' with dynamic prompt: %s", MAIN_PROMPT)
         self.conversation_log = []  # Track conversation for transcript
         super().__init__(
             instructions=MAIN_PROMPT,
@@ -164,38 +167,53 @@ class MainAgent(Agent):
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
-# --- Updated to use survey_submissions table ---
-async def save_userdata_to_db(userdata: UserData, campaign_id: int, submission_id: int):
+# --- Updated to use API ---
+async def save_userdata_to_api(userdata: UserData, campaign_id: int, submission_id: str):
     # Save S3 recording URL if present
     if getattr(userdata, 's3_recording_url', None):
-        update_survey_submission_s3_url(submission_id, userdata.s3_recording_url)
-        logger.info(f"Updated survey submission {submission_id} with S3 recording URL: {userdata.s3_recording_url}")
+        success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url)
+        if success:
+            logger.info(f"Updated survey submission {submission_id} with S3 recording URL: {userdata.s3_recording_url}")
+        else:
+            logger.warning(f"Failed to update S3 recording URL for submission {submission_id}")
     elif getattr(userdata, 'recording_id', None):
         # Optionally, if you have a way to build the S3 URL from recording_id, do it here
         pass
     
     # Get existing answers to avoid duplicates
-    existing_question_ids = get_existing_answers_for_survey_submission(submission_id)
+    existing_question_ids = await get_existing_answers_api(submission_id)
     
-    # Save all answers to DB
+    # Prepare all answers for batch submission
+    answers_to_submit = []
     for q_num, answer in userdata.questionnaire_answers.items():
-        # Get question ID from Supabase
-        questions = get_questions_for_campaign(campaign_id)
+        # Find question ID from the questions stored in userdata
         question_id = None
-        for q_id, q_text, q_order in questions:
-            if q_order == int(q_num):
-                question_id = q_id
+        for question in userdata.questions:
+            if question.get("question_order") == int(q_num):
+                question_id = question.get("id")
                 break
         
-        if question_id:
-            # Only record if this question hasn't been answered yet
-            if question_id not in existing_question_ids:
-                record_answer(submission_id, question_id, answer)
-                logger.info(f"Saved answer for question {q_num} to DB.")
-            else:
-                logger.info(f"Answer for question {q_num} already exists, skipping.")
+        if question_id and question_id not in existing_question_ids:
+            answers_to_submit.append({
+                "question_id": question_id,
+                "answer_text": answer
+            })
+            logger.info(f"Prepared answer for question {q_num} for API submission.")
+        elif question_id in existing_question_ids:
+            logger.info(f"Answer for question {q_num} already exists, skipping.")
         else:
-            logger.warning(f"Question id not found for campaign {campaign_id}, order {q_num}")
+            logger.warning(f"Question id not found for question order {q_num}")
+    
+    # Submit all answers in batch if there are any
+    if answers_to_submit:
+        try:
+            from api_client import api_client
+            await api_client.submit_answers(submission_id, answers_to_submit)
+            logger.info(f"Successfully submitted {len(answers_to_submit)} answers to API.")
+        except Exception as e:
+            logger.error(f"Failed to submit answers to API: {e}")
+            return False
+    
     return True
     
 @function_tool    
@@ -252,12 +270,12 @@ async def check_survey_complete(ctx: RunContext_T) -> str:
     logger.info(f"Survey completion check: {answered_questions}/{total_questions} questions answered")
     
     if answered_questions == total_questions:
-        # Save complete survey to DB
-        await save_userdata_to_db(userdata, userdata.campaign["id"], userdata.submission_id)
-        logger.info("Survey completed - all data saved to DB")
+        # Save complete survey to API
+        await save_userdata_to_api(userdata, userdata.campaign["id"], userdata.submission_id)
+        logger.info("Survey completed - all data saved to API")
         
         # Send completion status
-        await send_survey_status(ctx, "completed", "Survey successfully completed and saved to database")
+        await send_survey_status(ctx, "completed", "Survey successfully completed and saved via API")
         
         # Send final progress update
         await send_progress_update(ctx, current_question=None, last_answer=None)
@@ -331,44 +349,87 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"Participant ID: {participant_id}")
     
     # Check if survey submission already exists for this room
-    existing_submission = get_existing_survey_submission(room_name)
+    existing_submission = await get_existing_submission_api(room_name)
     if existing_submission:
         logger.info(f"Survey submission already exists for room {room_name} (ID: {existing_submission['id']})")
         submission_id = existing_submission['id']
         campaign_id = existing_submission['campaign_id']
-        campaign = get_campaign_by_id(campaign_id)
-    else:
-        # Select campaign based on room name
-        campaign = get_campaign_by_room_name(room_name)
-        logger.info(f"Selected campaign: {campaign['name']} (ID: {campaign['id']})")
         
-        # Create new survey submission only if one doesn't exist
-        # Note: user_profile should be created by the frontend before room creation
-        link_token = room_name  # Replace with actual token logic if needed
-        link_type = "phone" if phone_number else "email" if email else "general"
-        submission_id = record_survey_submission(
-            campaign_id=campaign["id"],
-            room_name=room_name,
-            link_token=link_token,
-            link_type=link_type,
-            s3_recording_url=None
-        )
-        logger.info(f"New survey submission recorded in DB with id: {submission_id}")
+        # Get campaign details from API using the campaign URI and link token
+        # Note: We need to extract campaign_uri and link_token from the existing submission
+        campaign_uri = existing_submission.get('campaign_uri') or 'default'
+        link_token = existing_submission.get('link_token') or room_name
+        
+        try:
+            campaign_data = await get_campaign_by_uri_and_token(campaign_uri, link_token)
+        except Exception as e:
+            logger.error(f"Failed to get campaign data from API: {e}")
+            # Fallback to basic campaign info from existing submission
+            campaign_data = {
+                "campaign": {
+                    "id": campaign_id,
+                    "name": "Fallback Campaign",
+                    "intro_prompt": "You are conducting a survey.",
+                    "purpose_explanation": "Thank you for participating.",
+                    "greeting": "Hello, welcome to our survey.",
+                    "closing": "Thank you for completing this survey."
+                },
+                "questions": []
+            }
+    else:
+        # For new submissions, we need to determine the campaign and create a submission
+        # This would typically be done by extracting campaign_uri and link_token from room name
+        # or from environment variables for default campaigns
+        
+        # Extract campaign URI and link token from room name or use defaults
+        # This is a simplified approach - in practice, you'd parse this from the room name
+        campaign_uri = "default"  # This should be extracted from room name or config
+        link_token = room_name
+        
+        try:
+            # Get campaign details from API
+            campaign_data = await get_campaign_by_uri_and_token(campaign_uri, link_token)
+            campaign = campaign_data.get("campaign", {})
+            
+            # Create new survey submission via API
+            link_type = "phone" if phone_number else "email" if email else "generic"
+            submission_response = await record_survey_submission_api(
+                campaign_id=campaign["id"],
+                link_token=link_token,
+                link_type=link_type,
+                room_name=room_name,
+                s3_recording_url=None
+            )
+            submission_id = submission_response
+            logger.info(f"New survey submission created via API with id: {submission_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create submission via API: {e}")
+            # Fallback to basic campaign data
+            campaign_data = {
+                "campaign": {
+                    "id": 1,
+                    "name": "Default Campaign",
+                    "intro_prompt": "You are conducting a survey.",
+                    "purpose_explanation": "Thank you for participating.",
+                    "greeting": "Hello, welcome to our survey.",
+                    "closing": "Thank you for completing this survey."
+                },
+                "questions": []
+            }
+            submission_id = "fallback-submission-id"
     
     # Initialize user data
     userdata = UserData()
     userdata.customer_phone = phone_number if phone_number else None
     userdata.customer_email = email if email else None
     
-    # Get questions for the selected campaign
-    questions = get_questions_for_campaign(campaign["id"])
-    logger.info(f"Loaded {len(questions)} questions for campaign {campaign['id']}")
-    
+    # Create main agent with campaign data from API
     userdata.agents.update({
-        "main_agent": MainAgent(campaign, questions),
+        "main_agent": MainAgent(campaign_data),
     })
     userdata.questions = userdata.agents["main_agent"].questions
-    userdata.campaign = campaign  # Store campaign dict in userdata
+    userdata.campaign = campaign_data.get("campaign", {})  # Store campaign dict in userdata
     userdata.submission_id = submission_id  # Set submission_id instead of call_id
     userdata.room = ctx.room  # Store room reference for data publishing
     
@@ -380,9 +441,11 @@ async def entrypoint(ctx: agents.JobContext):
         recording_success = await start_s3_recording(room_name, userdata)
         if recording_success:
             logger.info("S3 Recording started successfully")
-            # Update the survey submission with the recording URL
+            # Update the survey submission with the recording URL via API
             if hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url:
-                update_survey_submission_s3_url(submission_id, userdata.s3_recording_url)
+                success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url)
+                if not success:
+                    logger.warning(f"Failed to update S3 recording URL via API for submission {submission_id}")
         else:
             logger.warning("S3 Recording failed, continuing without recording")
             userdata.s3_recording_url = None  # Explicitly set to None if failed
@@ -450,6 +513,12 @@ async def entrypoint(ctx: agents.JobContext):
                 logger.warning("Room not available in userdata, cannot send first question")
         except Exception as e:
             logger.error(f"Failed to send first question update: {e}")
+    
+    # Cleanup API client resources
+    try:
+        await cleanup_api_client()
+    except Exception as e:
+        logger.warning(f"Failed to cleanup API client: {e}")
 
 if __name__ == "__main__": 
     #agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name="alex-telephony-agent"))
