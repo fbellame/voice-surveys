@@ -24,11 +24,27 @@ from api_client import (
 
 load_dotenv()
 
-logger = logging.getLogger("futures_survey_assistant")
-logger.setLevel(logging.INFO)
+# Set up maximum debug logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
-# Suppress hpack debug logs
-logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
+logger = logging.getLogger("futures_survey_assistant")
+logger.setLevel(logging.DEBUG)
+
+# Set all related loggers to DEBUG level
+logging.getLogger("futures_survey_api").setLevel(logging.DEBUG)
+logging.getLogger("livekit.agents").setLevel(logging.INFO)
+logging.getLogger("livekit").setLevel(logging.INFO)
+logging.getLogger("aiohttp").setLevel(logging.INFO)
+logging.getLogger("asyncio").setLevel(logging.INFO)
+
+# Suppress only the most verbose logs
+logging.getLogger("hpack.hpack").setLevel(logging.ERROR)
     
 RunContext_T = RunContext[UserData]
 
@@ -36,15 +52,22 @@ RunContext_T = RunContext[UserData]
 
 def build_dynamic_prompt_from_campaign_data(campaign_data):
     """Build dynamic prompt from campaign data received from API."""
+    logger.debug(f"Building dynamic prompt from campaign data: {campaign_data}")
+    
     campaign = campaign_data.get("campaign", {})
     questions = campaign_data.get("questions", [])
     
+    logger.debug(f"Campaign data: {campaign}")
+    logger.debug(f"Questions data: {questions}")
+    logger.debug(f"Number of questions: {len(questions)}")
+    
     current_time = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
     questions_section = ""
-    for question in questions:
+    for i, question in enumerate(questions):
         qid = question.get("id")
         qtext = question.get("question_text")
         qorder = question.get("question_order")
+        logger.debug(f"Processing question {i+1}: id={qid}, order={qorder}, text='{qtext}'")
         questions_section += f"\n{qorder}) Question {qorder}:\n   \"{qtext}\"\n"
     
     prompt = f"""
@@ -169,19 +192,25 @@ def prewarm(proc: JobProcess):
 
 # --- Updated to use API ---
 async def save_userdata_to_api(userdata: UserData, campaign_id: int, submission_id: str):
-    # Save S3 recording URL if present
-    if getattr(userdata, 's3_recording_url', None):
+    # Save S3 recording URL if present (skip for fallback submission ID)
+    if getattr(userdata, 's3_recording_url', None) and submission_id != "fallback-submission-id":
         success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url)
         if success:
             logger.info(f"Updated survey submission {submission_id} with S3 recording URL: {userdata.s3_recording_url}")
         else:
             logger.warning(f"Failed to update S3 recording URL for submission {submission_id}")
+    elif getattr(userdata, 's3_recording_url', None) and submission_id == "fallback-submission-id":
+        logger.warning("Cannot update S3 recording URL for fallback submission ID")
     elif getattr(userdata, 'recording_id', None):
         # Optionally, if you have a way to build the S3 URL from recording_id, do it here
         pass
     
-    # Get existing answers to avoid duplicates
-    existing_question_ids = await get_existing_answers_api(submission_id)
+    # Get existing answers to avoid duplicates (skip for fallback submission ID)
+    if submission_id == "fallback-submission-id":
+        existing_question_ids = []
+        logger.info("Using fallback submission ID, skipping existing answers check")
+    else:
+        existing_question_ids = await get_existing_answers_api(submission_id)
     
     # Prepare all answers for batch submission
     answers_to_submit = []
@@ -204,8 +233,8 @@ async def save_userdata_to_api(userdata: UserData, campaign_id: int, submission_
         else:
             logger.warning(f"Question id not found for question order {q_num}")
     
-    # Submit all answers in batch if there are any
-    if answers_to_submit:
+    # Submit all answers in batch if there are any (skip for fallback submission ID)
+    if answers_to_submit and submission_id != "fallback-submission-id":
         try:
             from api_client import api_client
             await api_client.submit_answers(submission_id, answers_to_submit)
@@ -213,6 +242,9 @@ async def save_userdata_to_api(userdata: UserData, campaign_id: int, submission_
         except Exception as e:
             logger.error(f"Failed to submit answers to API: {e}")
             return False
+    elif answers_to_submit and submission_id == "fallback-submission-id":
+        logger.warning("Cannot submit answers for fallback submission ID - answers will be lost")
+        return False
     
     return True
     
@@ -352,16 +384,33 @@ async def entrypoint(ctx: agents.JobContext):
     existing_submission = await get_existing_submission_api(room_name)
     if existing_submission:
         logger.info(f"Survey submission already exists for room {room_name} (ID: {existing_submission['id']})")
+        logger.debug(f"Existing submission data: {existing_submission}")
         submission_id = existing_submission['id']
         campaign_id = existing_submission['campaign_id']
         
         # Get campaign details from API using the campaign URI and link token
-        # Note: We need to extract campaign_uri and link_token from the existing submission
-        campaign_uri = existing_submission.get('campaign_uri') or 'default'
-        link_token = existing_submission.get('link_token') or room_name
+        # Use the link_token stored in the database
+        campaign_id = existing_submission.get('campaign_id')
+        link_token = existing_submission.get('link_token')
+        
+        # Get campaign_uri from the campaign data in the submission response
+        campaign_data = existing_submission.get('campaign', {})
+        campaign_uri = campaign_data.get('campaign_uri') or 'default'
+        
+        # Ensure we have a link_token - it should be in the database
+        if not link_token:
+            logger.error(f"No link_token found in existing submission for room {room_name}")
+            # Fallback to extracting from room name (should not happen in normal operation)
+            if "-" in room_name:
+                base_pattern = room_name.rsplit("-", 1)[0]
+                link_token = base_pattern
+            else:
+                link_token = room_name
         
         try:
+            logger.debug(f"Getting campaign data for URI: {campaign_uri}, token: {link_token}")
             campaign_data = await get_campaign_by_uri_and_token(campaign_uri, link_token)
+            logger.debug(f"Campaign data received: {campaign_data}")
         except Exception as e:
             logger.error(f"Failed to get campaign data from API: {e}")
             # Fallback to basic campaign info from existing submission
@@ -378,13 +427,23 @@ async def entrypoint(ctx: agents.JobContext):
             }
     else:
         # For new submissions, we need to determine the campaign and create a submission
-        # This would typically be done by extracting campaign_uri and link_token from room name
-        # or from environment variables for default campaigns
+        # Extract campaign URI and link token from room name
         
-        # Extract campaign URI and link token from room name or use defaults
-        # This is a simplified approach - in practice, you'd parse this from the room name
-        campaign_uri = "default"  # This should be extracted from room name or config
-        link_token = room_name
+        # Parse room name to extract campaign_uri and link_token
+        # Room name format: {room_pattern}{random_suffix}
+        # Example: "survey-api-test-5564" -> campaign_uri: "survey-api-test", link_token: "survey-api-test"
+        
+        # Extract campaign_uri from room name by removing the random suffix
+        # The room pattern ends with "-", so we split on the last "-" and take everything before it
+        if "-" in room_name:
+            # Remove the random suffix (everything after the last "-")
+            base_pattern = room_name.rsplit("-", 1)[0]
+            campaign_uri = base_pattern
+            link_token = base_pattern  # Use the same base pattern as the link token
+        else:
+            # Fallback if room name doesn't follow expected pattern
+            campaign_uri = "default"
+            link_token = room_name
         
         try:
             # Get campaign details from API
@@ -441,11 +500,13 @@ async def entrypoint(ctx: agents.JobContext):
         recording_success = await start_s3_recording(room_name, userdata)
         if recording_success:
             logger.info("S3 Recording started successfully")
-            # Update the survey submission with the recording URL via API
-            if hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url:
+            # Update the survey submission with the recording URL via API (skip for fallback submission ID)
+            if hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url and submission_id != "fallback-submission-id":
                 success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url)
                 if not success:
                     logger.warning(f"Failed to update S3 recording URL via API for submission {submission_id}")
+            elif hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url and submission_id == "fallback-submission-id":
+                logger.warning("Cannot update S3 recording URL for fallback submission ID")
         else:
             logger.warning("S3 Recording failed, continuing without recording")
             userdata.s3_recording_url = None  # Explicitly set to None if failed

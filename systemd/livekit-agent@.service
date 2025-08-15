@@ -6,7 +6,7 @@ Requires=docker.service
 
 [Service]
 # Centralize the image/tag here (change if you push to a registry)
-Environment=DOCKER_IMAGE=fbellame/future-survey:sha-8570326
+Environment=DOCKER_IMAGE=fbellame/future-survey:latest
 
 # Your env file (LIVEKIT_URL, keys, HEALTH_PORT=8081, etc.)
 EnvironmentFile=/etc/future-survey-agent.env
