@@ -1,12 +1,13 @@
 import os
 import logging
 import aiohttp
+from aiohttp import ClientResponseError
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
-# Set up logger
+# Set up logger with maximum debug logging
 logger = logging.getLogger("futures_survey_api")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # Load environment variables
 load_dotenv()
@@ -56,19 +57,36 @@ class SurveyAPIClient:
         session = await self._get_session()
         url = f"{self.base_url}{endpoint}"
         
+        logger.debug(f"Making {method} request to: {url}")
+        logger.debug(f"Headers: {session._default_headers}")
+        logger.debug(f"Params: {params}")
+        logger.debug(f"Data: {data}")
+        
         try:
             if method.upper() == "GET":
                 async with session.get(url, params=params) as response:
+                    logger.debug(f"Response status: {response.status}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
                     response.raise_for_status()
-                    return await response.json()
+                    result = await response.json()
+                    logger.debug(f"Response body: {result}")
+                    return result
             elif method.upper() == "POST":
                 async with session.post(url, json=data, params=params) as response:
+                    logger.debug(f"Response status: {response.status}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
                     response.raise_for_status()
-                    return await response.json()
+                    result = await response.json()
+                    logger.debug(f"Response body: {result}")
+                    return result
             elif method.upper() == "PUT":
                 async with session.put(url, json=data, params=params) as response:
+                    logger.debug(f"Response status: {response.status}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
                     response.raise_for_status()
-                    return await response.json()
+                    result = await response.json()
+                    logger.debug(f"Response body: {result}")
+                    return result
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
         except aiohttp.ClientError as e:
@@ -84,11 +102,15 @@ class SurveyAPIClient:
             endpoint = f"/api/campaigns/{campaign_uri}/details"
             params = {"token": link_token}
             
+            logger.debug(f"Making API request to: {self.base_url}{endpoint}")
+            logger.debug(f"With params: {params}")
+            
             response = await self._make_request("GET", endpoint, params=params)
+            logger.debug(f"Raw API response: {response}")
             logger.info(f"Retrieved campaign details for {campaign_uri}")
             
             # Convert the Edge Function response format to match what the main.py expects
-            return {
+            result = {
                 "campaign": {
                     "id": response.get("id"),
                     "name": response.get("name"),
@@ -101,6 +123,11 @@ class SurveyAPIClient:
                 },
                 "questions": response.get("questions", [])
             }
+            
+            logger.debug(f"Processed campaign data: {result}")
+            logger.debug(f"Number of questions in response: {len(result.get('questions', []))}")
+            
+            return result
         except Exception as e:
             logger.error(f"Failed to get campaign details: {e}")
             raise
@@ -141,6 +168,13 @@ class SurveyAPIClient:
             response = await self._make_request("POST", endpoint, data=data)
             logger.info(f"Submitted {len(answers)} answers for submission {submission_id}")
             return response
+        except ClientResponseError as e:
+            if e.status == 404:
+                logger.warning(f"Submission {submission_id} not found in database - cannot submit answers")
+                raise
+            else:
+                logger.error(f"Failed to submit answers: {e}")
+                raise
         except Exception as e:
             logger.error(f"Failed to submit answers: {e}")
             raise
@@ -154,6 +188,13 @@ class SurveyAPIClient:
             response = await self._make_request("PUT", endpoint, data=data)
             logger.info(f"Updated submission {submission_id} with S3 URL")
             return response
+        except ClientResponseError as e:
+            if e.status == 404:
+                logger.warning(f"Submission {submission_id} not found in database - cannot update S3 URL")
+                raise
+            else:
+                logger.error(f"Failed to update submission S3 URL: {e}")
+                raise
         except Exception as e:
             logger.error(f"Failed to update submission S3 URL: {e}")
             raise
@@ -189,6 +230,13 @@ class SurveyAPIClient:
                 return question_ids
             else:
                 logger.info(f"No existing answers found for submission {submission_id}")
+                return []
+        except aiohttp.ClientResponseError as e:
+            if e.status == 404:
+                logger.warning(f"Submission {submission_id} not found in database - this is expected for new submissions")
+                return []
+            else:
+                logger.error(f"Failed to get existing answers: {e}")
                 return []
         except Exception as e:
             logger.error(f"Failed to get existing answers: {e}")
