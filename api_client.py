@@ -86,7 +86,21 @@ class SurveyAPIClient:
             
             response = await self._make_request("GET", endpoint, params=params)
             logger.info(f"Retrieved campaign details for {campaign_uri}")
-            return response
+            
+            # Convert the Edge Function response format to match what the main.py expects
+            return {
+                "campaign": {
+                    "id": response.get("id"),
+                    "name": response.get("name"),
+                    "description": response.get("description"),
+                    "campaign_uri": response.get("campaign_uri"),
+                    "intro_prompt": response.get("intro_prompt", "You are conducting a survey."),
+                    "purpose_explanation": response.get("purpose_explanation", "Thank you for participating."),
+                    "greeting": response.get("greeting", "Hello, welcome to our survey."),
+                    "closing": response.get("closing", "Thank you for completing this survey.")
+                },
+                "questions": response.get("questions", [])
+            }
         except Exception as e:
             logger.error(f"Failed to get campaign details: {e}")
             raise
