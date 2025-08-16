@@ -1,29 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Room, RoomEvent, Track, RemoteParticipant, LocalParticipant, Participant } from 'livekit-client';
 import { LIVEKIT_CONFIG } from '@/config/livekit';
-
-export interface ParticipantInfo {
-  participant: Participant;
-  isSpeaking: boolean;
-  audioEnabled: boolean;
-}
-
-export interface TranscriptEntry {
-  speaker: 'agent' | 'participant';
-  text: string;
-  timestamp: string;
-}
-
-export interface SurveyProgress {
-  currentQuestionNumber: string | null;
-  currentQuestionText: string | null;
-  totalQuestions: number;
-  answeredQuestions: number;
-  lastAnswer: string | null;
-  completionPercentage: number;
-  status: 'started' | 'in_progress' | 'completed' | 'closing' | 'error';
-  statusMessage: string;
-}
+import type { ParticipantInfo, TranscriptEntry, SurveyProgress } from '@shared/livekit.types';
 
 export function useLiveKit() {
   const [room, setRoom] = useState<Room | null>(null);

@@ -2,5 +2,11 @@
   "name": "@shared/core",
   "private": true,
   "type": "module",
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "dependencies": {
+    "livekit-client": "^2.9.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
 }
