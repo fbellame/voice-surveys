@@ -1,0 +1,225 @@
+name: Deploy to DigitalOcean
+
+on:
+  workflow_dispatch:
+    inputs:
+      recreate:
+        description: "Delete existing droplet first?"
+        required: false
+        default: "false"
+
+env:
+  VM_NAME: ${{ vars.VM_NAME }}
+  VPC_UUID: ${{ vars.VPC_UUID }}
+  REGION: ${{ vars.REGION || 'tor1' }}
+  IMAGE: ${{ vars.IMAGE || 'ubuntu-24-04-x64' }}
+  SIZE: ${{ vars.SIZE || 's-2vcpu-4gb' }}
+  TAGS: ${{ vars.TAGS || 'prod' }}
+  DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+  APP_PORT: ${{ vars.APP_PORT || '8081' }}
+
+  # Non-secret constants
+  LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Write SSH key files
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.SSH_PUBLIC_KEY }}"  > ~/.ssh/id_ed25519.pub
+          chmod 600 ~/.ssh/id_ed25519
+          chmod 644 ~/.ssh/id_ed25519.pub
+
+      - name: Ensure/Fetch SSH key ID from DigitalOcean
+        id: sshkey
+        run: |
+          set -euo pipefail
+
+          KEY_NAME="gh-${GITHUB_REPOSITORY}-${GITHUB_RUN_ID}"
+
+          # DO fingerprints are MD5 (colon-separated). Strip the "MD5:" prefix.
+          PUB_FP=$(ssh-keygen -E md5 -lf ~/.ssh/id_ed25519.pub | awk '{print $2}' | sed 's/^MD5://')
+
+          echo "Local public key MD5 fingerprint: $PUB_FP"
+
+          # 1) Try to fetch by fingerprint (most reliable)
+          EXIST_ID=$(doctl compute ssh-key get "$PUB_FP" --format ID --no-header 2>/dev/null || true)
+
+          if [ -n "${EXIST_ID:-}" ]; then
+            echo "Found existing DO SSH key (ID: $EXIST_ID)"
+            echo "key_id=$EXIST_ID" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "No key with fingerprint $PUB_FP in DO; creating..."
+          set +e
+          CREATE_OUT=$(doctl compute ssh-key create "$KEY_NAME" \
+            --public-key "$(cat ~/.ssh/id_ed25519.pub)" \
+            --format ID --no-header 2>&1)
+          STATUS=$?
+          set -e
+
+          if [ $STATUS -eq 0 ]; then
+            # Created successfully; CREATE_OUT is the ID
+            echo "Created new DO SSH key (ID: $CREATE_OUT)"
+            echo "key_id=$CREATE_OUT" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # If creation failed (e.g., 422 already exists), try to fetch again by fingerprint
+          echo "Create failed (likely exists). Re-fetching by fingerprint..."
+          EXIST_ID=$(doctl compute ssh-key get "$PUB_FP" --format ID --no-header 2>/dev/null || true)
+          if [ -n "${EXIST_ID:-}" ]; then
+            echo "Recovered existing DO SSH key (ID: $EXIST_ID)"
+            echo "key_id=$EXIST_ID" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "ERROR: Could not create or fetch the SSH key. Full output:"
+          echo "$CREATE_OUT" >&2
+          exit 1
+    
+      - name: Optionally delete existing droplet
+        if: ${{ github.event.inputs.recreate == 'true' }}
+        run: |
+          set -e
+          if doctl compute droplet get "$VM_NAME" >/dev/null 2>&1; then
+            doctl compute droplet delete -f "$VM_NAME"
+            sleep 10
+          fi
+
+      - name: Create droplet if missing (with cloud-init)
+        run: |
+          set -e
+          if ! doctl compute droplet get "$VM_NAME" >/dev/null 2>&1; then
+            doctl compute droplet create "$VM_NAME" \
+              --region "$REGION" \
+              --image "$IMAGE" \
+              --size "$SIZE" \
+              --ssh-keys "${{ steps.sshkey.outputs.key_id }}" \
+              --vpc-uuid "$VPC_UUID" \
+              --tag-names "$TAGS" \
+              --user-data-file cloud-init/base.yaml \
+              --wait
+          fi
+
+      - name: Get droplet IP
+        id: ip
+        run: |
+          IP=$(doctl compute droplet get "$VM_NAME" --format PublicIPv4 --no-header)
+          if [ -z "$IP" ]; then
+            echo "Droplet IP not found" >&2
+            exit 1
+          fi
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+          echo "Droplet IP: $IP"
+
+
+      - name: Wait for SSH to respond
+        run: |
+          IP=${{ steps.ip.outputs.ip }}
+          for i in {1..40}; do
+            if nc -zv $IP 22 >/dev/null 2>&1; then
+              echo "SSH up."
+              break
+            fi
+            echo "Waiting for SSH ($i/40)..."
+            sleep 5
+          done
+
+      - name: Add host key to known_hosts
+        run: |
+          IP=${{ steps.ip.outputs.ip }}
+          mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts
+
+      - name: Build env file from Secrets/Variables
+        run: |
+          # Create local env file (never committed)
+          {
+            echo "DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}"
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+            echo "LIVEKIT_URL=${{ env.LIVEKIT_URL }}"
+            echo "LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}"
+            echo "LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}"
+            echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
+            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+            echo "AWS_REGION=${{ env.AWS_REGION }}"
+            echo "SUPABASE_URL=${{ env.SUPABASE_URL }}"
+            echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}"
+          } > future-survey-agent.env
+
+      - name: Copy env and systemd unit
+        run: |
+          IP=${{ steps.ip.outputs.ip }}
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes future-survey-agent.env root@$IP:/tmp/future-survey-agent.env
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes systemd/livekit-agent@.service root@$IP:/tmp/livekit-agent@.service
+
+      - name: Remote configure systemd + docker login + start agent
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
+          APP_PORT: ${{ env.APP_PORT }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          IP=${{ steps.ip.outputs.ip }}
+
+          # Export env in the remote shell, THEN feed the script on stdin.
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
+            "export DOCKER_IMAGE='${DOCKER_IMAGE}'; \
+            export APP_PORT='${APP_PORT}'; \
+            export DOCKERHUB_USERNAME='${DOCKERHUB_USERNAME}'; \
+            export DOCKERHUB_TOKEN='${DOCKERHUB_TOKEN}'; \
+            bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          # 1) Env file
+          mv /tmp/future-survey-agent.env /etc/future-survey-agent.env
+          chmod 600 /etc/future-survey-agent.env
+
+          # 2) Systemd unit (ensure lowercase filename)
+          mv /tmp/livekit-agent@.service /etc/systemd/system/livekit-agent@.service
+          chmod 644 /etc/systemd/system/livekit-agent@.service
+
+          # 3) Drop-in with DOCKER_IMAGE & APP_PORT
+          install -d -m 0755 /etc/systemd/system/livekit-agent@.service.d
+          cat >/etc/systemd/system/livekit-agent@.service.d/10-env.conf <<EOF
+          [Service]
+          Environment=DOCKER_IMAGE=${DOCKER_IMAGE}
+          Environment=APP_PORT=${APP_PORT}
+          EOF
+
+          systemctl daemon-reload
+
+          # 4) (Optional) Docker Hub login
+          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          fi
+
+          # 5) Enable & start
+          systemctl enable --now livekit-agent@1
+
+          # 6) Show status
+          systemctl status --no-pager livekit-agent@1 || true
+          REMOTE
+
+      - name: Tail first logs
+        run: |
+          IP=${{ steps.ip.outputs.ip }}
+          ssh -i ~/.ssh/id_ed25519 root@$IP 'journalctl -u livekit-agent@1 -n 200 --no-pager || docker logs --tail=200 future-survey-agent-1 || true'
