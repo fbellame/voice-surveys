@@ -113,7 +113,7 @@ cat > tsconfig.base.json <<'JSON'
     "baseUrl": ".",
     "paths": { "@shared/*": ["packages/shared/src/*"] }
   }
-}
+} 
 JSON
 
 mkdir -p apps/live-chatter apps/survey-hub packages/shared/src services/livekit-agent supabase/functions/survey-api supabase/migrations .cursor/rules docs
