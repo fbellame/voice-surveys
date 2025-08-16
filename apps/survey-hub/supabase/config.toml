@@ -1,0 +1,4 @@
+project_id = "rpgpwailndlmpgufmfzi"
+
+[functions.s3-signed-url]
+verify_jwt = false
