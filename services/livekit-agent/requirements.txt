@@ -1,4 +1,0 @@
-livekit-agents==1.2.5
-pydantic>=2
-python-dotenv
-requests
