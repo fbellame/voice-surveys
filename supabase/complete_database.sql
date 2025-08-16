@@ -1,4 +1,5 @@
-
+-- Complete database schema with user_profiles table to fix race condition
+-- Run this script to create the complete database structure
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -11,58 +12,16 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
-
 CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
-
-
-
-
-
-
-
-
-ALTER SCHEMA "public" OWNER TO "postgres";
-
+CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
+CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 COMMENT ON SCHEMA "public" IS 'standard public schema';
 
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
-
-
-
-
-
-
+-- Functions
 CREATE OR REPLACE FUNCTION "public"."decrement_generic_link_responses"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -75,10 +34,6 @@ BEGIN
     RETURN OLD;
 END;
 $$;
-
-
-ALTER FUNCTION "public"."decrement_generic_link_responses"() OWNER TO "postgres";
-
 
 CREATE OR REPLACE FUNCTION "public"."increment_generic_link_responses"() RETURNS "trigger"
     LANGUAGE "plpgsql"
@@ -93,10 +48,6 @@ BEGIN
 END;
 $$;
 
-
-ALTER FUNCTION "public"."increment_generic_link_responses"() OWNER TO "postgres";
-
-
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -106,14 +57,12 @@ BEGIN
 END;
 $$;
 
-
-ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
-
 SET default_tablespace = '';
-
 SET default_table_access_method = "heap";
 
+-- Tables
 
+-- Answer table
 CREATE TABLE IF NOT EXISTS "public"."answer" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "survey_submission_id" "uuid" NOT NULL,
@@ -124,20 +73,13 @@ CREATE TABLE IF NOT EXISTS "public"."answer" (
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
-
-ALTER TABLE "public"."answer" OWNER TO "postgres";
-
-
+-- Campaign table
 CREATE SEQUENCE IF NOT EXISTS "public"."campaign_id_seq"
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
-
-ALTER SEQUENCE "public"."campaign_id_seq" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."campaign" (
     "id" bigint DEFAULT "nextval"('"public"."campaign_id_seq"'::"regclass") NOT NULL,
@@ -157,10 +99,7 @@ CREATE TABLE IF NOT EXISTS "public"."campaign" (
     CONSTRAINT "campaign_campaign_type_check" CHECK (("campaign_type" = ANY (ARRAY['web_survey'::"text", 'phone_survey'::"text"])))
 );
 
-
-ALTER TABLE "public"."campaign" OWNER TO "postgres";
-
-
+-- Campaign links table
 CREATE TABLE IF NOT EXISTS "public"."campaign_links" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "campaign_id" bigint NOT NULL,
@@ -174,28 +113,16 @@ CREATE TABLE IF NOT EXISTS "public"."campaign_links" (
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"(),
     "user_id" "uuid",
-    "is_anonymous" boolean DEFAULT false,
     CONSTRAINT "campaign_links_link_type_check" CHECK (("link_type" = ANY (ARRAY['generic'::"text", 'personal'::"text"])))
 );
 
-
-ALTER TABLE "public"."campaign_links" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."campaign_links"."is_anonymous" IS 'When true, allows anonymous survey submissions without creating user profiles';
-
-
-
+-- Campaign room mapping table
 CREATE SEQUENCE IF NOT EXISTS "public"."campaign_room_mapping_id_seq"
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
-
-ALTER SEQUENCE "public"."campaign_room_mapping_id_seq" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."campaign_room_mapping" (
     "id" bigint DEFAULT "nextval"('"public"."campaign_room_mapping_id_seq"'::"regclass") NOT NULL,
@@ -206,20 +133,13 @@ CREATE TABLE IF NOT EXISTS "public"."campaign_room_mapping" (
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
-
-ALTER TABLE "public"."campaign_room_mapping" OWNER TO "postgres";
-
-
+-- Question table
 CREATE SEQUENCE IF NOT EXISTS "public"."question_id_seq"
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
-
-ALTER SEQUENCE "public"."question_id_seq" OWNER TO "postgres";
-
 
 CREATE TABLE IF NOT EXISTS "public"."question" (
     "id" bigint DEFAULT "nextval"('"public"."question_id_seq"'::"regclass") NOT NULL,
@@ -230,10 +150,7 @@ CREATE TABLE IF NOT EXISTS "public"."question" (
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
-
-ALTER TABLE "public"."question" OWNER TO "postgres";
-
-
+-- Survey invitations table
 CREATE TABLE IF NOT EXISTS "public"."survey_invitations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "campaign_id" bigint NOT NULL,
@@ -249,27 +166,7 @@ CREATE TABLE IF NOT EXISTS "public"."survey_invitations" (
     CONSTRAINT "survey_invitations_invitation_type_check" CHECK (("invitation_type" = ANY (ARRAY['email'::"text", 'phone'::"text", 'other'::"text"])))
 );
 
-
-ALTER TABLE "public"."survey_invitations" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."survey_submissions" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "campaign_id" bigint NOT NULL,
-    "user_profile_id" "uuid",
-    "room_name" "text",
-    "link_token" "text" NOT NULL,
-    "link_type" "text" NOT NULL,
-    "s3_recording_url" "text",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "updated_at" timestamp with time zone DEFAULT "now"(),
-    "call_timestamp" timestamp with time zone DEFAULT "now"()
-);
-
-
-ALTER TABLE "public"."survey_submissions" OWNER TO "postgres";
-
-
+-- NEW: User profiles table (separates user data from session data)
 CREATE TABLE IF NOT EXISTS "public"."user_profiles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "campaign_id" bigint NOT NULL,
@@ -285,546 +182,78 @@ CREATE TABLE IF NOT EXISTS "public"."user_profiles" (
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
+-- UPDATED: Survey submissions table (cleaned up, only session data)
+CREATE TABLE IF NOT EXISTS "public"."survey_submissions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "campaign_id" bigint NOT NULL,
+    "user_profile_id" "uuid",  -- Links to user_profiles table
+    "room_name" "text",
+    "link_token" "text" NOT NULL,
+    "link_type" "text" NOT NULL,
+    "s3_recording_url" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "call_timestamp" timestamp with time zone DEFAULT "now"()
+);
 
-ALTER TABLE "public"."user_profiles" OWNER TO "postgres";
+-- Primary key constraints
+ALTER TABLE ONLY "public"."answer" ADD CONSTRAINT "answer_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."campaign_links" ADD CONSTRAINT "campaign_links_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."campaign_links" ADD CONSTRAINT "campaign_links_unique_token_key" UNIQUE ("unique_token");
+ALTER TABLE ONLY "public"."campaign" ADD CONSTRAINT "campaign_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."campaign_room_mapping" ADD CONSTRAINT "campaign_room_mapping_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."campaign_room_mapping" ADD CONSTRAINT "campaign_room_mapping_room_pattern_key" UNIQUE ("room_pattern");
+ALTER TABLE ONLY "public"."campaign" ADD CONSTRAINT "campaign_uri_unique" UNIQUE ("campaign_uri");
+ALTER TABLE ONLY "public"."question" ADD CONSTRAINT "question_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."survey_invitations" ADD CONSTRAINT "survey_invitations_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."survey_invitations" ADD CONSTRAINT "survey_invitations_unique_token_key" UNIQUE ("unique_token");
+ALTER TABLE ONLY "public"."user_profiles" ADD CONSTRAINT "user_profiles_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."survey_submissions" ADD CONSTRAINT "survey_submissions_pkey" PRIMARY KEY ("id");
 
-
-ALTER TABLE ONLY "public"."answer"
-    ADD CONSTRAINT "answer_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."campaign_links"
-    ADD CONSTRAINT "campaign_links_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."campaign_links"
-    ADD CONSTRAINT "campaign_links_unique_token_key" UNIQUE ("unique_token");
-
-
-
-ALTER TABLE ONLY "public"."campaign"
-    ADD CONSTRAINT "campaign_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."campaign_room_mapping"
-    ADD CONSTRAINT "campaign_room_mapping_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."campaign_room_mapping"
-    ADD CONSTRAINT "campaign_room_mapping_room_pattern_key" UNIQUE ("room_pattern");
-
-
-
-ALTER TABLE ONLY "public"."campaign"
-    ADD CONSTRAINT "campaign_uri_unique" UNIQUE ("campaign_uri");
-
-
-
-ALTER TABLE ONLY "public"."question"
-    ADD CONSTRAINT "question_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."survey_invitations"
-    ADD CONSTRAINT "survey_invitations_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."survey_invitations"
-    ADD CONSTRAINT "survey_invitations_unique_token_key" UNIQUE ("unique_token");
-
-
-
-ALTER TABLE ONLY "public"."survey_submissions"
-    ADD CONSTRAINT "survey_submissions_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."user_profiles"
-    ADD CONSTRAINT "user_profiles_pkey" PRIMARY KEY ("id");
-
-
-
+-- Indexes
 CREATE INDEX "idx_campaign_id" ON "public"."question" USING "btree" ("campaign_id");
-
-
-
 CREATE INDEX "idx_campaign_links_campaign_id" ON "public"."campaign_links" USING "btree" ("campaign_id");
-
-
-
 CREATE INDEX "idx_campaign_links_token" ON "public"."campaign_links" USING "btree" ("unique_token");
-
-
-
 CREATE INDEX "idx_campaign_room_mapping_campaign_id" ON "public"."campaign_room_mapping" USING "btree" ("campaign_id");
-
-
-
 CREATE INDEX "idx_campaign_room_mapping_pattern" ON "public"."campaign_room_mapping" USING "btree" ("room_pattern");
-
-
-
 CREATE INDEX "idx_campaign_uri" ON "public"."campaign" USING "btree" ("campaign_uri");
-
-
-
 CREATE INDEX "idx_survey_invitations_campaign_id" ON "public"."survey_invitations" USING "btree" ("campaign_id");
-
-
-
 CREATE INDEX "idx_survey_invitations_contact" ON "public"."survey_invitations" USING "btree" ("contact_value");
-
-
-
 CREATE INDEX "idx_survey_invitations_token" ON "public"."survey_invitations" USING "btree" ("unique_token");
 
-
-
-CREATE INDEX "idx_survey_submissions_campaign_id" ON "public"."survey_submissions" USING "btree" ("campaign_id");
-
-
-
-CREATE INDEX "idx_survey_submissions_link_token" ON "public"."survey_submissions" USING "btree" ("link_token");
-
-
-
-CREATE INDEX "idx_survey_submissions_link_type" ON "public"."survey_submissions" USING "btree" ("link_type");
-
-
-
-CREATE UNIQUE INDEX "idx_survey_submissions_personal_unique" ON "public"."survey_submissions" USING "btree" ("link_token") WHERE ("link_type" = 'personal'::"text");
-
-
-
-CREATE INDEX "idx_survey_submissions_user_profile_id" ON "public"."survey_submissions" USING "btree" ("user_profile_id");
-
-
-
+-- User profiles indexes
 CREATE INDEX "idx_user_profiles_campaign_id" ON "public"."user_profiles" USING "btree" ("campaign_id");
-
-
-
 CREATE INDEX "idx_user_profiles_link_token" ON "public"."user_profiles" USING "btree" ("link_token");
-
-
-
 CREATE INDEX "idx_user_profiles_link_type" ON "public"."user_profiles" USING "btree" ("link_type");
 
+-- Survey submissions indexes
+CREATE INDEX "idx_survey_submissions_campaign_id" ON "public"."survey_submissions" USING "btree" ("campaign_id");
+CREATE INDEX "idx_survey_submissions_user_profile_id" ON "public"."survey_submissions" USING "btree" ("user_profile_id");
+CREATE INDEX "idx_survey_submissions_link_token" ON "public"."survey_submissions" USING "btree" ("link_token");
+CREATE INDEX "idx_survey_submissions_link_type" ON "public"."survey_submissions" USING "btree" ("link_type");
+CREATE UNIQUE INDEX "idx_survey_submissions_personal_unique" ON "public"."survey_submissions" USING "btree" ("link_token") WHERE ("link_type" = 'personal'::"text");
 
-
+-- Triggers
 CREATE OR REPLACE TRIGGER "decrement_generic_link_responses_trigger" AFTER DELETE ON "public"."survey_submissions" FOR EACH ROW EXECUTE FUNCTION "public"."decrement_generic_link_responses"();
-
-
-
 CREATE OR REPLACE TRIGGER "increment_generic_link_responses_trigger" AFTER INSERT ON "public"."survey_submissions" FOR EACH ROW EXECUTE FUNCTION "public"."increment_generic_link_responses"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_answer_updated_at" BEFORE UPDATE ON "public"."answer" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_campaign_links_updated_at" BEFORE UPDATE ON "public"."campaign_links" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_campaign_room_mapping_updated_at" BEFORE UPDATE ON "public"."campaign_room_mapping" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_campaign_updated_at" BEFORE UPDATE ON "public"."campaign" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_question_updated_at" BEFORE UPDATE ON "public"."question" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
 CREATE OR REPLACE TRIGGER "update_survey_invitations_updated_at" BEFORE UPDATE ON "public"."survey_invitations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
+CREATE OR REPLACE TRIGGER "update_user_profiles_updated_at" BEFORE UPDATE ON "public"."user_profiles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 CREATE OR REPLACE TRIGGER "update_survey_submissions_updated_at" BEFORE UPDATE ON "public"."survey_submissions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
-
-
-CREATE OR REPLACE TRIGGER "update_user_profiles_updated_at" BEFORE UPDATE ON "public"."user_profiles" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
-ALTER TABLE ONLY "public"."answer"
-    ADD CONSTRAINT "answer_question_id_fkey" FOREIGN KEY ("question_id") REFERENCES "public"."question"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."answer"
-    ADD CONSTRAINT "answer_survey_submission_id_fkey" FOREIGN KEY ("survey_submission_id") REFERENCES "public"."survey_submissions"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."campaign_links"
-    ADD CONSTRAINT "campaign_links_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."campaign_room_mapping"
-    ADD CONSTRAINT "campaign_room_mapping_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."campaign"
-    ADD CONSTRAINT "campaign_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."question"
-    ADD CONSTRAINT "question_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."survey_invitations"
-    ADD CONSTRAINT "survey_invitations_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."survey_invitations"
-    ADD CONSTRAINT "survey_invitations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."survey_submissions"
-    ADD CONSTRAINT "survey_submissions_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."survey_submissions"
-    ADD CONSTRAINT "survey_submissions_user_profile_id_fkey" FOREIGN KEY ("user_profile_id") REFERENCES "public"."user_profiles"("id") ON DELETE SET NULL;
-
-
-
-ALTER TABLE ONLY "public"."user_profiles"
-    ADD CONSTRAINT "user_profiles_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
-
-
-
-
-
-ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
-
-
-
-
-
-REVOKE USAGE ON SCHEMA "public" FROM PUBLIC;
-GRANT USAGE ON SCHEMA "public" TO "anon";
-GRANT USAGE ON SCHEMA "public" TO "authenticated";
-GRANT USAGE ON SCHEMA "public" TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-GRANT ALL ON FUNCTION "public"."decrement_generic_link_responses"() TO "anon";
-GRANT ALL ON FUNCTION "public"."decrement_generic_link_responses"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."decrement_generic_link_responses"() TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."increment_generic_link_responses"() TO "anon";
-GRANT ALL ON FUNCTION "public"."increment_generic_link_responses"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."increment_generic_link_responses"() TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "anon";
-GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-GRANT ALL ON TABLE "public"."answer" TO "anon";
-GRANT ALL ON TABLE "public"."answer" TO "authenticated";
-GRANT ALL ON TABLE "public"."answer" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."campaign_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."campaign_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."campaign_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."campaign" TO "anon";
-GRANT ALL ON TABLE "public"."campaign" TO "authenticated";
-GRANT ALL ON TABLE "public"."campaign" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."campaign_links" TO "anon";
-GRANT ALL ON TABLE "public"."campaign_links" TO "authenticated";
-GRANT ALL ON TABLE "public"."campaign_links" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."campaign_room_mapping_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."campaign_room_mapping_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."campaign_room_mapping_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."campaign_room_mapping" TO "anon";
-GRANT ALL ON TABLE "public"."campaign_room_mapping" TO "authenticated";
-GRANT ALL ON TABLE "public"."campaign_room_mapping" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."question_id_seq" TO "anon";
-GRANT ALL ON SEQUENCE "public"."question_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."question_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."question" TO "anon";
-GRANT ALL ON TABLE "public"."question" TO "authenticated";
-GRANT ALL ON TABLE "public"."question" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."survey_invitations" TO "anon";
-GRANT ALL ON TABLE "public"."survey_invitations" TO "authenticated";
-GRANT ALL ON TABLE "public"."survey_invitations" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."survey_submissions" TO "anon";
-GRANT ALL ON TABLE "public"."survey_submissions" TO "authenticated";
-GRANT ALL ON TABLE "public"."survey_submissions" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."user_profiles" TO "anon";
-GRANT ALL ON TABLE "public"."user_profiles" TO "authenticated";
-GRANT ALL ON TABLE "public"."user_profiles" TO "service_role";
-
-
-
-
-
-
-
-
-
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
-
-
-
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
-
-
-
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-RESET ALL;
+-- Foreign key constraints
+ALTER TABLE ONLY "public"."answer" ADD CONSTRAINT "answer_question_id_fkey" FOREIGN KEY ("question_id") REFERENCES "public"."question"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."answer" ADD CONSTRAINT "answer_survey_submission_id_fkey" FOREIGN KEY ("survey_submission_id") REFERENCES "public"."survey_submissions"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."campaign_links" ADD CONSTRAINT "campaign_links_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."campaign_room_mapping" ADD CONSTRAINT "campaign_room_mapping_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."campaign" ADD CONSTRAINT "campaign_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."question" ADD CONSTRAINT "question_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."survey_invitations" ADD CONSTRAINT "survey_invitations_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."survey_invitations" ADD CONSTRAINT "survey_invitations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."user_profiles" ADD CONSTRAINT "user_profiles_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."survey_submissions" ADD CONSTRAINT "survey_submissions_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaign"("id") ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."survey_submissions" ADD CONSTRAINT "survey_submissions_user_profile_id_fkey" FOREIGN KEY ("user_profile_id") REFERENCES "public"."user_profiles"("id") ON DELETE SET NULL;
