@@ -1,0 +1,66 @@
+# Frontend React/TypeScript Applications Rules
+
+## React/TypeScript Standards
+- Use TypeScript for all new code
+- Prefer functional components with hooks over class components
+- Use proper TypeScript types and interfaces
+- Avoid `any` type - use proper typing or `unknown`
+- Use React.memo() for performance optimization when needed
+
+## Project Structure
+- `live-chatter/` - Real-time audio chat application
+- `survey-hub/` - Survey management and analytics dashboard
+- Each app follows similar structure:
+  - `src/components/` - Reusable UI components
+  - `src/pages/` - Page-level components
+  - `src/hooks/` - Custom React hooks
+  - `src/integrations/` - External service integrations
+  - `src/lib/` - Utility functions
+  - `src/utils/` - Helper functions
+
+## Component Guidelines
+- Use shadcn/ui components from `components/ui/`
+- Follow atomic design principles
+- Keep components focused and single-purpose
+- Use proper prop interfaces with TypeScript
+- Implement proper error boundaries
+
+## State Management
+- Use React hooks (useState, useEffect, useContext) for local state
+- Use Supabase client for server state management
+- Implement proper loading and error states
+- Use React Query or SWR for data fetching when needed
+
+## Styling
+- Use Tailwind CSS for styling
+- Follow the established design system
+- Use CSS modules or styled-components for complex styling
+- Maintain responsive design principles
+
+## Performance
+- Use React.lazy() for code splitting
+- Implement proper memoization with useMemo and useCallback
+- Optimize bundle size with tree shaking
+- Use proper key props in lists
+
+## Testing
+- Write unit tests for components using React Testing Library
+- Test user interactions and accessibility
+- Mock external dependencies
+- Maintain good test coverage
+
+## Accessibility
+- Use semantic HTML elements
+- Implement proper ARIA attributes
+- Ensure keyboard navigation works
+- Test with screen readers
+
+## Build and Development
+- Use Vite for build tooling
+- Follow the established ESLint and Prettier configuration
+- Use proper environment variables
+- Implement proper error handling and logging
+description:
+globs:
+alwaysApply: false
+---

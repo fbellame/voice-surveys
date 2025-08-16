@@ -1,0 +1,51 @@
+# Backend Python Services Rules
+
+## Python Code Standards
+- Follow PEP 8 style guidelines
+- Use type hints for all function parameters and return values
+- Use f-strings for string formatting (Python 3.6+)
+- Prefer list/dict comprehensions over explicit loops when appropriate
+- Use `pathlib` for file path operations instead of `os.path`
+
+## Project Structure
+- `livekit-agent/` - LiveKit audio processing service
+  - `main.py` - Main application entry point
+  - `api_client.py` - API client implementations
+  - `recording.py` - Audio recording functionality
+  - `user_data.py` - User data management
+  - `requirements.txt` - Python dependencies
+  - `Dockerfile` - Container configuration
+
+## Dependencies
+- Use `requirements.txt` for dependency management
+- Pin specific versions for production stability
+- Use virtual environments for development
+- Document any system-level dependencies
+
+## API Design
+- Use FastAPI for REST APIs when applicable
+- Implement proper error handling with meaningful error messages
+- Use Pydantic models for request/response validation
+- Follow RESTful conventions for endpoint design
+
+## Testing
+- Write unit tests for all business logic
+- Use pytest for testing framework
+- Mock external dependencies in tests
+- Maintain good test coverage
+
+## Logging
+- Use Python's built-in logging module
+- Set appropriate log levels (DEBUG, INFO, WARNING, ERROR)
+- Include context information in log messages
+- Use structured logging when possible
+
+## Security
+- Never hardcode secrets or API keys
+- Use environment variables for configuration
+- Validate all input data
+- Implement proper authentication and authorization
+description:
+globs:
+alwaysApply: false
+---

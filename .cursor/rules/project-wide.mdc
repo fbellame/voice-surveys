@@ -1,0 +1,33 @@
+# Voice Surveys Monorepo - Project-wide Rules
+
+## Project Structure
+- `apps/` - Frontend applications (React/TypeScript)
+  - `live-chatter/` - Real-time audio chat application
+  - `survey-hub/` - Survey management and analytics dashboard
+- `services/` - Backend services (Python)
+  - `livekit-agent/` - LiveKit audio processing service
+- `packages/` - Shared packages and types
+- `supabase/` - Database schema and edge functions
+
+## General Guidelines
+1. Follow TypeScript best practices for frontend code
+2. Use Python type hints and follow PEP 8 for backend code
+3. Maintain consistent naming conventions across all services
+4. Use shared types from `packages/shared/` for cross-service communication
+5. Follow the established monorepo structure and avoid creating new top-level directories
+
+## Code Style
+- Use meaningful variable and function names
+- Add comprehensive comments for complex logic
+- Follow existing code patterns in each service
+- Use proper error handling and logging
+
+## Architecture Principles
+- Keep services loosely coupled
+- Use shared types for data contracts
+- Maintain clear separation between frontend and backend concerns
+- Follow the established API patterns in each service
+description:
+globs:
+alwaysApply: false
+---
