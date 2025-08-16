@@ -1,0 +1,20 @@
+{
+  "name": "@repo/voice-surveys",
+  "private": true,
+  "packageManager": "npm@10.8.2",
+  "workspaces": ["apps/*", "packages/*", "services/*"],
+  "scripts": {
+    "dev:live-chatter": "npm run dev -w @apps/live-chatter",
+    "dev:survey-hub": "npm run dev -w @apps/survey-hub",
+    "build:live-chatter": "npm run build -w @apps/live-chatter",
+    "build:survey-hub": "npm run build -w @apps/survey-hub",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "lint": "npm run lint -ws --if-present",
+    "test": "npm run test -ws --if-present",
+    "dev:agent": "docker compose up --build livekit-agent",
+    "down:agent": "docker compose down",
+    "dev:db": "supabase start",
+    "dev:api": "supabase functions serve survey-api --env-file supabase/.env",
+    "db:types": "supabase gen types typescript --local > packages/shared/src/supabase.types.ts"
+  }
+}

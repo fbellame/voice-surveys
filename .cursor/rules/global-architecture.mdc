@@ -1,0 +1,3 @@
+- apps/* (frontends), services/* (Python), packages/shared (TS contracts), supabase/* (DB + Edge Functions).
+- Shared survey contracts live in packages/shared/src/survey.ts.
+- Never hardcode secrets; use .env files.
