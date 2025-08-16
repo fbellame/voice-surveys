@@ -1,275 +1,540 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS'
+};
 
-serve(async (req) => {
+Deno.serve(async (req)=>{
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', {
+      headers: corsHeaders
+    });
   }
-
+  
   try {
-    // Create Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    )
-
-    const url = new URL(req.url)
-    const path = url.pathname
-
-    // Get campaign details
-    if (path.startsWith('/campaigns/') && path.includes('/details') && req.method === 'GET') {
-      const campaignUri = path.split('/')[2]
-      const token = url.searchParams.get('token')
-      
-      if (!token) {
-        return new Response(
-          JSON.stringify({ error: 'Token is required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      // Get campaign by URI
-      const { data: campaign, error: campaignError } = await supabaseClient
-        .from('campaign')
-        .select('id, name, description, intro_prompt, purpose_explanation, greeting, closing')
-        .eq('campaign_uri', campaignUri)
-        .single()
-
-      if (campaignError || !campaign) {
-        return new Response(
-          JSON.stringify({ error: 'Campaign not found' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      // Verify link token
-      const { data: link, error: linkError } = await supabaseClient
-        .from('campaign_links')
-        .select('id, is_active, is_anonymous, max_responses, current_responses')
-        .eq('unique_token', token)
-        .eq('campaign_id', campaign.id)
-        .single()
-
-      if (linkError || !link) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid or expired link' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      if (!link.is_active) {
-        return new Response(
-          JSON.stringify({ error: 'Survey link is no longer active' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      // Get questions
-      const { data: questions, error: questionsError } = await supabaseClient
-        .from('question')
-        .select('id, question_text, question_order')
-        .eq('campaign_id', campaign.id)
-        .order('question_order')
-
-      if (questionsError) {
-        return new Response(
-          JSON.stringify({ error: 'Failed to fetch questions' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      return new Response(
-        JSON.stringify({
-          campaign,
-          link: {
-            is_anonymous: link.is_anonymous,
-            max_responses: link.max_responses,
-            current_responses: link.current_responses
-          },
-          questions
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const url = new URL(req.url);
+    const fullPath = url.pathname;
+    // Supabase strips the /functions/v1/ prefix, so we need to remove /survey-api
+    const path = fullPath.replace('/survey-api', '');
+    const method = req.method;
+    
+    console.log(`Survey API: ${method} ${fullPath} -> ${path}`);
+    
+    // Debug endpoint
+    if ((method === 'GET' || method === 'POST') && (path === '' || path === '/')) {
+      return new Response(JSON.stringify({
+        message: 'Survey API is working',
+        method,
+        fullPath,
+        path,
+        searchParams: Object.fromEntries(url.searchParams),
+        timestamp: new Date().toISOString()
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
     }
-
-    // Create submission
-    if (path === '/submissions' && req.method === 'POST') {
-      const body = await req.json()
-      const { campaign_id, link_token, link_type, room_name, s3_recording_url, call_timestamp } = body
-
+    
+    // GET /campaigns/{campaign_uri}/details?token={link_token}
+    if (method === 'GET' && path.match(/^\/campaigns\/([^\/]+)\/details$/)) {
+      const match = path.match(/^\/campaigns\/([^\/]+)\/details$/);
+      const campaignUri = match?.[1];
+      const token = url.searchParams.get('token');
+      
+      if (!campaignUri) {
+        return new Response(JSON.stringify({
+          error: 'Campaign URI is required'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Get campaign
+      const { data: campaign, error: campaignError } = await supabase
+        .from('campaign')
+        .select('*')
+        .eq('campaign_uri', campaignUri)
+        .single();
+      
+      if (campaignError || !campaign) {
+        return new Response(JSON.stringify({
+          error: 'Campaign not found'
+        }), {
+          status: 404,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Get questions
+      const { data: questions } = await supabase
+        .from('question')
+        .select('*')
+        .eq('campaign_id', campaign.id)
+        .order('question_order');
+      
+      let linkInfo = null;
+      if (token) {
+        // Try to find personal invitation first
+        const { data: invitation } = await supabase
+          .from('survey_invitations')
+          .select('*')
+          .eq('unique_token', token)
+          .eq('campaign_id', campaign.id)
+          .maybeSingle();
+        
+        if (invitation) {
+          linkInfo = {
+            id: invitation.id,
+            unique_token: invitation.unique_token,
+            link_type: 'personal',
+            is_anonymous: false,
+            is_active: !invitation.responded_at
+          };
+        } else {
+          // Try to find campaign link
+          const { data: campaignLink } = await supabase
+            .from('campaign_links')
+            .select('*')
+            .eq('unique_token', token)
+            .eq('campaign_id', campaign.id)
+            .eq('is_active', true)
+            .maybeSingle();
+          
+          if (campaignLink) {
+            linkInfo = {
+              id: campaignLink.id,
+              unique_token: campaignLink.unique_token,
+              link_type: 'generic',
+              is_anonymous: campaignLink.is_anonymous,
+              is_active: campaignLink.is_active
+            };
+          }
+        }
+        
+        if (!linkInfo) {
+          return new Response(JSON.stringify({
+            error: 'Invalid or expired token'
+          }), {
+            status: 401,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json'
+            }
+          });
+        }
+      }
+      
+      const response = {
+        id: campaign.id,
+        name: campaign.name,
+        description: campaign.description,
+        campaign_uri: campaign.campaign_uri,
+        intro_prompt: campaign.intro_prompt,
+        purpose_explanation: campaign.purpose_explanation,
+        greeting: campaign.greeting,
+        closing: campaign.closing,
+        is_active: campaign.is_active,
+        questions: questions || [],
+        link_info: linkInfo
+      };
+      
+      return new Response(JSON.stringify(response), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    
+    // GET /submissions?room_name={room_name}
+    if (method === 'GET' && (path === '/submissions' || path === '/api/submissions')) {
+      const roomName = url.searchParams.get('room_name');
+      if (!roomName) {
+        return new Response(JSON.stringify({
+          error: 'room_name parameter is required'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      const { data: submissions, error } = await supabase
+        .from('survey_submissions')
+        .select('*')
+        .eq('room_name', roomName);
+      
+      if (error) {
+        return new Response(JSON.stringify({
+          error: 'Failed to get submissions'
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      return new Response(JSON.stringify({
+        submissions: submissions || []
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    
+    // POST /submissions
+    if (method === 'POST' && (path === '/submissions' || path === '/api/submissions')) {
+      const body = await req.json();
+      const { campaign_id, link_token, link_type, room_name, s3_recording_url, call_timestamp } = body;
+      
       if (!campaign_id || !link_token || !link_type) {
-        return new Response(
-          JSON.stringify({ error: 'Missing required fields' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        return new Response(JSON.stringify({
+          error: 'Missing required fields: campaign_id, link_token, link_type'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
       }
-
-      // Verify link
-      const { data: link, error: linkError } = await supabaseClient
-        .from('campaign_links')
-        .select('id, is_active, is_anonymous, max_responses, current_responses')
-        .eq('unique_token', link_token)
-        .eq('campaign_id', campaign_id)
-        .eq('link_type', link_type)
-        .single()
-
-      if (linkError || !link) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid or expired survey link' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      if (!link.is_active) {
-        return new Response(
-          JSON.stringify({ error: 'This survey link is no longer active' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      if (link.max_responses && link.current_responses >= link.max_responses) {
-        return new Response(
-          JSON.stringify({ error: 'Maximum number of responses reached for this survey' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      let user_profile_id = null
-
-      // Handle user profile creation based on link type and anonymous setting
+      
+      // Validate token exists
+      let tokenValid = false;
       if (link_type === 'personal') {
-        // Personal links always create user profiles
-        const { data: userProfile, error: profileError } = await supabaseClient
-          .from('user_profiles')
-          .insert({
-            campaign_id,
-            link_token,
-            link_type,
-            // Add user profile data if provided in body
-            ...(body.user_profile_data || {})
-          })
+        const { data: invitation } = await supabase
+          .from('survey_invitations')
           .select('id')
-          .single()
-
-        if (profileError) {
-          return new Response(
-            JSON.stringify({ error: 'Failed to create user profile' }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-        }
-
-        user_profile_id = userProfile.id
-      } else if (link_type === 'generic' && !link.is_anonymous) {
-        // Non-anonymous generic links create user profiles
-        const { data: userProfile, error: profileError } = await supabaseClient
-          .from('user_profiles')
-          .insert({
-            campaign_id,
-            link_token,
-            link_type,
-          })
+          .eq('unique_token', link_token)
+          .eq('campaign_id', campaign_id)
+          .maybeSingle();
+        tokenValid = !!invitation;
+      } else {
+        const { data: campaignLink } = await supabase
+          .from('campaign_links')
           .select('id')
-          .single()
-
-        if (profileError) {
-          return new Response(
-            JSON.stringify({ error: 'Failed to create user profile' }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-        }
-
-        user_profile_id = userProfile.id
+          .eq('unique_token', link_token)
+          .eq('campaign_id', campaign_id)
+          .eq('is_active', true)
+          .maybeSingle();
+        tokenValid = !!campaignLink;
       }
-      // For anonymous generic links, no user profile is created
-
-      // Create the survey submission
-      const { data: submission, error: submissionError } = await supabaseClient
+      
+      if (!tokenValid) {
+        return new Response(JSON.stringify({
+          error: 'Invalid token'
+        }), {
+          status: 401,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Create submission
+      const { data: submission, error: submissionError } = await supabase
         .from('survey_submissions')
         .insert({
           campaign_id,
-          user_profile_id,
-          room_name,
           link_token,
           link_type,
+          room_name,
           s3_recording_url,
-          call_timestamp
+          call_timestamp: call_timestamp || new Date().toISOString()
         })
-        .select('id')
-        .single()
-
+        .select()
+        .single();
+      
       if (submissionError) {
-        return new Response(
-          JSON.stringify({ error: 'Failed to create survey submission' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        return new Response(JSON.stringify({
+          error: 'Failed to create submission',
+          details: submissionError.message
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
       }
-
-      return new Response(
-        JSON.stringify({
-          submission_id: submission.id,
-          user_profile_id,
-          is_anonymous: !user_profile_id
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      
+      return new Response(JSON.stringify({
+        submission_id: submission.id,
+        success: true
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
     }
-
-    // Submit answers
-    if (path.startsWith('/submissions/') && path.includes('/answers') && req.method === 'POST') {
-      const submissionId = path.split('/')[2]
-      const body = await req.json()
-      const { answers } = body
-
-      if (!answers || !Array.isArray(answers) || answers.length === 0) {
-        return new Response(
-          JSON.stringify({ error: 'No answers provided' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+    
+    // GET /submissions/{submission_id}/answers
+    if (method === 'GET' && path.match(/^\/(?:api\/)?submissions\/([^\/]+)\/answers$/)) {
+      const match = path.match(/^\/(?:api\/)?submissions\/([^\/]+)\/answers$/);
+      const submissionId = match?.[1];
+      
+      if (!submissionId) {
+        return new Response(JSON.stringify({
+          error: 'Submission ID is required'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
       }
-
-      const answersToInsert = answers.map((answer: any) => ({
+      
+      const { data: answers, error } = await supabase
+        .from('answer')
+        .select('*')
+        .eq('survey_submission_id', submissionId);
+      
+      if (error) {
+        return new Response(JSON.stringify({
+          error: 'Failed to get answers'
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      return new Response(JSON.stringify({
+        answers: answers || []
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    
+    // POST /submissions/{submission_id}/answers
+    if (method === 'POST' && path.match(/^\/(?:api\/)?submissions\/([^\/]+)\/answers$/)) {
+      const match = path.match(/^\/(?:api\/)?submissions\/([^\/]+)\/answers$/);
+      const submissionId = match?.[1];
+      const body = await req.json();
+      const { answers } = body;
+      
+      if (!submissionId || !answers || !Array.isArray(answers)) {
+        return new Response(JSON.stringify({
+          error: 'Missing required fields: answers (array)'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Verify submission exists
+      const { data: submission } = await supabase
+        .from('survey_submissions')
+        .select('id')
+        .eq('id', submissionId)
+        .single();
+      
+      if (!submission) {
+        return new Response(JSON.stringify({
+          error: 'Submission not found'
+        }), {
+          status: 404,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Insert answers
+      const answerInserts = answers.map((answer) => ({
         survey_submission_id: submissionId,
         question_id: answer.question_id,
         answer_text: answer.answer_text
-      }))
-
-      const { error } = await supabaseClient
+      }));
+      
+      const { error: answersError } = await supabase
         .from('answer')
-        .insert(answersToInsert)
-
-      if (error) {
-        return new Response(
-          JSON.stringify({ error: 'Failed to submit answers' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        .insert(answerInserts);
+      
+      if (answersError) {
+        return new Response(JSON.stringify({
+          error: 'Failed to save answers',
+          details: answersError.message
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
       }
-
-      return new Response(
-        JSON.stringify({ success: true, answers_submitted: answers.length }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      
+      return new Response(JSON.stringify({
+        success: true,
+        answers_saved: answers.length
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
     }
-
-    return new Response(
-      JSON.stringify({ error: 'Endpoint not found' }),
-      { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
+    
+    // PUT /submissions/{submission_id}
+    if (method === 'PUT' && path.match(/^\/(?:api\/)?submissions\/([^\/]+)$/)) {
+      const match = path.match(/^\/(?:api\/)?submissions\/([^\/]+)$/);
+      const submissionId = match?.[1];
+      const body = await req.json();
+      
+      if (!submissionId) {
+        return new Response(JSON.stringify({
+          error: 'Submission ID is required'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      const { data, error } = await supabase
+        .from('survey_submissions')
+        .update(body)
+        .eq('id', submissionId)
+        .select()
+        .single();
+      
+      if (error) {
+        return new Response(JSON.stringify({
+          error: 'Failed to update submission'
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      return new Response(JSON.stringify(data), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    
+    // PATCH /submissions/{submission_id} (keep existing)
+    if (method === 'PATCH' && path.match(/^\/(?:api\/)?submissions\/([^\/]+)$/)) {
+      const match = path.match(/^\/(?:api\/)?submissions\/([^\/]+)$/);
+      const submissionId = match?.[1];
+      const body = await req.json();
+      
+      if (!submissionId) {
+        return new Response(JSON.stringify({
+          error: 'Submission ID is required'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Update submission
+      const updateData = {
+        updated_at: new Date().toISOString()
+      };
+      if (body.s3_recording_url) updateData.s3_recording_url = body.s3_recording_url;
+      if (body.call_timestamp) updateData.call_timestamp = body.call_timestamp;
+      if (body.room_name) updateData.room_name = body.room_name;
+      
+      const { error: updateError } = await supabase
+        .from('survey_submissions')
+        .update(updateData)
+        .eq('id', submissionId);
+      
+      if (updateError) {
+        return new Response(JSON.stringify({
+          error: 'Failed to update submission',
+          details: updateError.message
+        }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Submission updated successfully'
+      }), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    
+    // Route not found - include debug info
+    return new Response(JSON.stringify({
+      error: 'Route not found',
+      debug: {
+        method,
+        fullPath,
+        path,
+        url: req.url,
+        searchParams: Object.fromEntries(url.searchParams)
+      }
+    }), {
+      status: 404,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
+    
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    console.error('Survey API Error:', error);
+    return new Response(JSON.stringify({
+      error: 'Internal server error'
+    }), {
+      status: 500,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
   }
-})
+});

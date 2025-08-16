@@ -3,6 +3,11 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 
 from livekit.agents import (Agent, AgentSession)
+# Import shared types for consistency
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../packages/shared'))
+from python_types import SurveyProgress, TranscriptEntry
 
 @dataclass
 class UserData:
