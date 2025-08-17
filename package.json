@@ -3,6 +3,9 @@
   "private": true,
   "packageManager": "npm@10.8.2",
   "workspaces": ["apps/*", "packages/*", "services/*"],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
   "scripts": {
     "dev:live-chatter": "npm run dev -w @apps/live-chatter",
     "dev:survey-hub": "npm run dev -w @apps/survey-hub",
@@ -11,10 +14,11 @@
     "typecheck": "npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",
     "test": "npm run test -ws --if-present",
-    "dev:agent": "docker compose up --build livekit-agent",
+    "dev:agent": "cd services/livekit-agent && ~/miniconda3/bin/conda run -n alex_livekit python main.py dev",
     "down:agent": "docker compose down",
+    "dev:all": "concurrently \"npm run dev:live-chatter\" \"npm run dev:survey-hub\" \"npm run dev:agent\" \"npm run dev:api\"",
     "dev:db": "supabase start",
-    "dev:api": "supabase functions serve survey-api --env-file supabase/.env",
+    "dev:api": "supabase functions serve survey-api --env-file supabase/functions/.env",
     "db:types": "supabase gen types typescript --local > packages/shared/src/supabase.types.ts"
   }
 }
