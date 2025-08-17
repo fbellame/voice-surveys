@@ -160,6 +160,70 @@ Deno.serve(async (req)=>{
       });
     }
     
+    // GET /campaigns/{campaign_id}/details-by-id
+    if (method === 'GET' && path.match(/^\/campaigns\/(\d+)\/details-by-id$/)) {
+      const match = path.match(/^\/campaigns\/(\d+)\/details-by-id$/);
+      const campaignId = parseInt(match?.[1] || '0');
+      
+      if (!campaignId) {
+        return new Response(JSON.stringify({
+          error: 'Campaign ID is required'
+        }), {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Get campaign by ID
+      const { data: campaign, error: campaignError } = await supabase
+        .from('campaign')
+        .select('*')
+        .eq('id', campaignId)
+        .single();
+      
+      if (campaignError || !campaign) {
+        return new Response(JSON.stringify({
+          error: 'Campaign not found'
+        }), {
+          status: 404,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+      
+      // Get questions
+      const { data: questions } = await supabase
+        .from('question')
+        .select('*')
+        .eq('campaign_id', campaign.id)
+        .order('question_order');
+      
+      const response = {
+        id: campaign.id,
+        name: campaign.name,
+        description: campaign.description,
+        campaign_uri: campaign.campaign_uri,
+        intro_prompt: campaign.intro_prompt,
+        purpose_explanation: campaign.purpose_explanation,
+        greeting: campaign.greeting,
+        closing: campaign.closing,
+        is_active: campaign.is_active,
+        questions: questions || []
+      };
+      
+      return new Response(JSON.stringify(response), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+    
     // GET /submissions?room_name={room_name}
     if (method === 'GET' && (path === '/submissions' || path === '/api/submissions')) {
       const roomName = url.searchParams.get('room_name');

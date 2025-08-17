@@ -2,8 +2,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@shared/supabase.types';
 
-// Use remote database for hybrid approach (local frontend + remote backend)
-const SUPABASE_URL = "https://rpgpwailndlmpgufmfzi.supabase.co";
+// Use local database for development
+const SUPABASE_URL = "http://127.0.0.1:54321";
 const SUPABASE_PUBLISHABLE_KEY = "REDACTED_SECRET";
 
 // Import the supabase client like this:
