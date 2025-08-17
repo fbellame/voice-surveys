@@ -38,6 +38,7 @@ interface CampaignLink {
   is_active: boolean;
   max_responses: number | null;
   current_responses: number;
+  is_anonymous: boolean;
 }
 
 interface SimpleSurveyProps {
@@ -50,6 +51,14 @@ interface SimpleSurveyProps {
 export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }: SimpleSurveyProps) {
   const [surveyActive, setSurveyActive] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
+  
+  // Debug logging for component props
+  console.log('=== SimpleSurvey Component Debug ===');
+  console.log('campaign:', campaign);
+  console.log('invitation:', invitation);
+  console.log('campaignLink:', campaignLink);
+  console.log('campaignLink?.is_anonymous:', campaignLink?.is_anonymous);
+  console.log('===================================');
   const [currentRoomName, setCurrentRoomName] = useState<string>('');
   const [userInfo, setUserInfo] = useState({
     fullName: '',
@@ -90,13 +99,37 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
   const isUserSpeaking = localUser?.isSpeaking || false;
 
   const handleUserInfoSubmit = async () => {
-    if (!userInfo.fullName.trim() || !userInfo.location.trim() || !userInfo.activity.trim()) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      });
-      return;
+    // Check if this is an anonymous survey
+    const isAnonymous = campaignLink?.is_anonymous || false;
+    
+    // Debug logging for anonymous survey detection
+    console.log('=== ANONYMOUS SURVEY DEBUG ===');
+    console.log('campaignLink:', campaignLink);
+    console.log('campaignLink?.is_anonymous:', campaignLink?.is_anonymous);
+    console.log('isAnonymous:', isAnonymous);
+    console.log('userInfo:', userInfo);
+    console.log('=============================');
+    
+    if (isAnonymous) {
+      // For anonymous surveys, only require a nickname (full name)
+      if (!userInfo.fullName.trim()) {
+        toast({
+          title: "Missing Information",
+          description: "Please provide a nickname to continue",
+          variant: "destructive"
+        });
+        return;
+      }
+    } else {
+      // For non-anonymous surveys, require all fields
+      if (!userInfo.fullName.trim() || !userInfo.location.trim() || !userInfo.activity.trim()) {
+        toast({
+          title: "Missing Information",
+          description: "Please fill in all required fields",
+          variant: "destructive"
+        });
+        return;
+      }
     }
     
     // Debug: Log user info when form is submitted
@@ -153,13 +186,15 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
         console.log('Link type:', linkType);
 
         // Step 1: Create user profile
+        const isAnonymous = campaignLink?.is_anonymous || false;
+        
         const userProfileData = {
           campaign_id: campaign.id,
           full_name: userInfo.fullName || null,
-          email: userInfo.email || null,
-          geography: userInfo.location || null,
-          occupation: userInfo.activity || null,
-          phone_number: userInfo.email || null, // Using email as phone_number for now
+          email: isAnonymous ? null : (userInfo.email || null),
+          geography: isAnonymous ? null : (userInfo.location || null),
+          occupation: isAnonymous ? null : (userInfo.activity || null),
+          phone_number: isAnonymous ? null : (userInfo.email || null), // Using email as phone_number for now
           link_token: linkToken,
           link_type: linkType,
           invitation_token: invitationToken,
@@ -426,8 +461,19 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
               <h1 className="text-3xl font-bold">
                 {campaign?.name || "Survey"}
               </h1>
+              {campaignLink?.is_anonymous && (
+                <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                  <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                  </svg>
+                  Anonymous Survey
+                </div>
+              )}
               <p className="text-muted-foreground">
-                Please provide your information to begin
+                {campaignLink?.is_anonymous 
+                  ? "This is an anonymous survey. Only a nickname is required."
+                  : "Please provide your information to begin"
+                }
               </p>
               {invitation && (
                 <div className="space-y-1">
@@ -466,51 +512,71 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
             </div>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={userInfo.email}
-                  disabled={!!invitation?.contact_value}
-                  onChange={(e) => setUserInfo({...userInfo, email: e.target.value})}
-                  placeholder="your@email.com"
-                  className="bg-background"
-                />
-              </div>
+              {campaignLink?.is_anonymous ? (
+                // Anonymous survey - only show nickname field
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Nickname *</Label>
+                  <Input
+                    id="fullName"
+                    value={userInfo.fullName}
+                    onChange={(e) => setUserInfo({...userInfo, fullName: e.target.value})}
+                    placeholder="Enter a nickname (e.g., John, SurveyUser123)"
+                    className="bg-background"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This survey is anonymous. Only a nickname is required.
+                  </p>
+                </div>
+              ) : (
+                // Non-anonymous survey - show all fields
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={userInfo.email}
+                      disabled={!!invitation?.contact_value}
+                      onChange={(e) => setUserInfo({...userInfo, email: e.target.value})}
+                      placeholder="your@email.com"
+                      className="bg-background"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name *</Label>
-                <Input
-                  id="fullName"
-                  value={userInfo.fullName}
-                  onChange={(e) => setUserInfo({...userInfo, fullName: e.target.value})}
-                  placeholder="Enter your full name"
-                  className="bg-background"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="fullName">Full Name *</Label>
+                    <Input
+                      id="fullName"
+                      value={userInfo.fullName}
+                      onChange={(e) => setUserInfo({...userInfo, fullName: e.target.value})}
+                      placeholder="Enter your full name"
+                      className="bg-background"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="location">Location *</Label>
-                <Input
-                  id="location"
-                  value={userInfo.location}
-                  onChange={(e) => setUserInfo({...userInfo, location: e.target.value})}
-                  placeholder="Enter your location"
-                  className="bg-background"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location *</Label>
+                    <Input
+                      id="location"
+                      value={userInfo.location}
+                      onChange={(e) => setUserInfo({...userInfo, location: e.target.value})}
+                      placeholder="Enter your location"
+                      className="bg-background"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="activity">Activity *</Label>
-                <Input
-                  id="activity"
-                  value={userInfo.activity}
-                  onChange={(e) => setUserInfo({...userInfo, activity: e.target.value})}
-                  placeholder="Enter your activity/profession"
-                  className="bg-background"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="activity">Activity *</Label>
+                    <Input
+                      id="activity"
+                      value={userInfo.activity}
+                      onChange={(e) => setUserInfo({...userInfo, activity: e.target.value})}
+                      placeholder="Enter your activity/profession"
+                      className="bg-background"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <Button 

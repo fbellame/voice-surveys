@@ -99,7 +99,7 @@ class SurveyAPIClient:
     async def get_campaign_details(self, campaign_uri: str, link_token: str) -> Dict[str, Any]:
         """Get campaign details and questions via API"""
         try:
-            endpoint = f"/api/campaigns/{campaign_uri}/details"
+            endpoint = f"/campaigns/{campaign_uri}/details"
             params = {"token": link_token}
             
             logger.debug(f"Making API request to: {self.base_url}{endpoint}")
@@ -132,12 +132,46 @@ class SurveyAPIClient:
             logger.error(f"Failed to get campaign details: {e}")
             raise
     
+    async def get_campaign_details_by_id(self, campaign_id: int) -> Dict[str, Any]:
+        """Get campaign details and questions via API using campaign ID"""
+        try:
+            endpoint = f"/campaigns/{campaign_id}/details-by-id"
+            
+            logger.debug(f"Making API request to: {self.base_url}{endpoint}")
+            
+            response = await self._make_request("GET", endpoint)
+            logger.debug(f"Raw API response: {response}")
+            logger.info(f"Retrieved campaign details for ID {campaign_id}")
+            
+            # Convert the Edge Function response format to match what the main.py expects
+            result = {
+                "campaign": {
+                    "id": response.get("id"),
+                    "name": response.get("name"),
+                    "description": response.get("description"),
+                    "campaign_uri": response.get("campaign_uri"),
+                    "intro_prompt": response.get("intro_prompt", "You are conducting a survey."),
+                    "purpose_explanation": response.get("purpose_explanation", "Thank you for participating."),
+                    "greeting": response.get("greeting", "Hello, welcome to our survey."),
+                    "closing": response.get("closing", "Thank you for completing this survey.")
+                },
+                "questions": response.get("questions", [])
+            }
+            
+            logger.debug(f"Processed campaign data: {result}")
+            logger.debug(f"Number of questions in response: {len(result.get('questions', []))}")
+            
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get campaign details by ID: {e}")
+            raise
+    
     async def create_submission(self, campaign_id: int, link_token: str, link_type: str, 
                                room_name: str = None, s3_recording_url: str = None, 
                                call_timestamp: str = None) -> Dict[str, Any]:
         """Create a new survey submission via API"""
         try:
-            endpoint = "/api/submissions"
+            endpoint = "/submissions"
             data = {
                 "campaign_id": campaign_id,
                 "link_token": link_token,
@@ -162,7 +196,7 @@ class SurveyAPIClient:
     async def submit_answers(self, submission_id: str, answers: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Submit answers for a survey submission via API"""
         try:
-            endpoint = f"/api/submissions/{submission_id}/answers"
+            endpoint = f"/submissions/{submission_id}/answers"
             data = {"answers": answers}
             
             response = await self._make_request("POST", endpoint, data=data)
@@ -182,7 +216,7 @@ class SurveyAPIClient:
     async def update_submission_s3_url(self, submission_id: str, s3_recording_url: str) -> Dict[str, Any]:
         """Update the S3 recording URL for a submission via API"""
         try:
-            endpoint = f"/api/submissions/{submission_id}"
+            endpoint = f"/submissions/{submission_id}"
             data = {"s3_recording_url": s3_recording_url}
             
             response = await self._make_request("PUT", endpoint, data=data)
@@ -202,7 +236,7 @@ class SurveyAPIClient:
     async def get_existing_submission(self, room_name: str) -> Optional[Dict[str, Any]]:
         """Get existing submission by room name via API"""
         try:
-            endpoint = "/api/submissions"
+            endpoint = "/submissions"
             params = {"room_name": room_name}
             
             response = await self._make_request("GET", endpoint, params=params)
@@ -220,7 +254,7 @@ class SurveyAPIClient:
     async def get_existing_answers(self, submission_id: str) -> List[int]:
         """Get existing question IDs that have been answered for a submission via API"""
         try:
-            endpoint = f"/api/submissions/{submission_id}/answers"
+            endpoint = f"/submissions/{submission_id}/answers"
             
             response = await self._make_request("GET", endpoint)
             
@@ -249,6 +283,10 @@ api_client = SurveyAPIClient()
 async def get_campaign_by_uri_and_token(campaign_uri: str, link_token: str) -> Dict[str, Any]:
     """Get campaign details by URI and token"""
     return await api_client.get_campaign_details(campaign_uri, link_token)
+
+async def get_campaign_by_id(campaign_id: int) -> Dict[str, Any]:
+    """Get campaign details by ID"""
+    return await api_client.get_campaign_details_by_id(campaign_id)
 
 async def record_survey_submission_api(campaign_id: int, link_token: str, link_type: str,
                                      room_name: str = None, s3_recording_url: str = None,

@@ -17,7 +17,7 @@ from recording import start_s3_recording
 
 # --- API integration imports ---
 from api_client import (
-    get_campaign_by_uri_and_token, record_survey_submission_api, record_answer_api,
+    get_campaign_by_uri_and_token, get_campaign_by_id, record_survey_submission_api, record_answer_api,
     update_submission_s3_url_api, get_existing_submission_api, get_existing_answers_api,
     cleanup_api_client
 )
@@ -259,9 +259,9 @@ async def set_questionnaire_answer(
     
     # Find current question text
     current_question_text = None
-    for q_id, q_text, q_order in userdata.questions:
-        if q_order == int(question_number):
-            current_question_text = q_text
+    for question in userdata.questions:
+        if question.get("question_order") == int(question_number):
+            current_question_text = question.get("question_text")
             break
     
     # Send transcript update for participant answer
@@ -272,9 +272,9 @@ async def set_questionnaire_answer(
     next_question_text = None
     
     if int(question_number) < len(userdata.questions):
-        for q_id, q_text, q_order in userdata.questions:
-            if q_order == int(next_question_num):
-                next_question_text = q_text
+        for question in userdata.questions:
+            if question.get("question_order") == int(next_question_num):
+                next_question_text = question.get("question_text")
                 break
     
     # Send progress update with current answer and next question info
@@ -333,7 +333,7 @@ async def check_survey_complete(ctx: RunContext_T) -> str:
         
         return f"Survey complete! Said closing message and ended the call."
     else:
-        missing_questions = [str(q[2]) for q in userdata.questions if str(q[2]) not in userdata.questionnaire_answers]
+        missing_questions = [str(question.get("question_order")) for question in userdata.questions if str(question.get("question_order")) not in userdata.questionnaire_answers]
         await send_survey_status(ctx, "in_progress", f"Survey incomplete. Missing questions: {missing_questions}")
         return f"Survey is not complete. {answered_questions}/{total_questions} questions answered. Missing questions: {missing_questions}"
 
@@ -388,28 +388,12 @@ async def entrypoint(ctx: agents.JobContext):
         submission_id = existing_submission['id']
         campaign_id = existing_submission['campaign_id']
         
-        # Get campaign details from API using the campaign URI and link token
-        # Use the link_token stored in the database
+        # Get campaign details from API using the campaign ID
         campaign_id = existing_submission.get('campaign_id')
-        link_token = existing_submission.get('link_token')
-        
-        # Get campaign_uri from the campaign data in the submission response
-        campaign_data = existing_submission.get('campaign', {})
-        campaign_uri = campaign_data.get('campaign_uri') or 'default'
-        
-        # Ensure we have a link_token - it should be in the database
-        if not link_token:
-            logger.error(f"No link_token found in existing submission for room {room_name}")
-            # Fallback to extracting from room name (should not happen in normal operation)
-            if "-" in room_name:
-                base_pattern = room_name.rsplit("-", 1)[0]
-                link_token = base_pattern
-            else:
-                link_token = room_name
         
         try:
-            logger.debug(f"Getting campaign data for URI: {campaign_uri}, token: {link_token}")
-            campaign_data = await get_campaign_by_uri_and_token(campaign_uri, link_token)
+            logger.debug(f"Getting campaign data for ID: {campaign_id}")
+            campaign_data = await get_campaign_by_id(campaign_id)
             logger.debug(f"Campaign data received: {campaign_data}")
         except Exception as e:
             logger.error(f"Failed to get campaign data from API: {e}")
@@ -535,13 +519,13 @@ async def entrypoint(ctx: agents.JobContext):
     # Send the first question to the frontend after session starts
     # Send directly using userdata.room without creating a RunContext
     if userdata.questions:
-        first_question = userdata.questions[0]  # (q_id, q_text, q_order)
+        first_question = userdata.questions[0]  # Dictionary with question data
         
         # Send progress update with first question
         progress_data = {
             "type": "survey_progress",
             "current_question_number": "1",
-            "current_question_text": first_question[1],  # q_text
+            "current_question_text": first_question.get("question_text"),
             "total_questions": len(userdata.questions),
             "answered_questions": 0,
             "last_answer": None,
@@ -569,7 +553,7 @@ async def entrypoint(ctx: agents.JobContext):
                 await userdata.room.local_participant.publish_data(status_payload, reliable=True)
                 logger.info(f"Survey status sent: started - Survey has begun with first question")
                 
-                logger.info(f"First question sent to frontend: {first_question[1]}")
+                logger.info(f"First question sent to frontend: {first_question.get('question_text')}")
             else:
                 logger.warning("Room not available in userdata, cannot send first question")
         except Exception as e:

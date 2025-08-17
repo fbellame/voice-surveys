@@ -9,3 +9,4 @@ node_modules
 **/*.pyc
 **/.venv
 **/.ruff_cache
+.cursor/mcp.json

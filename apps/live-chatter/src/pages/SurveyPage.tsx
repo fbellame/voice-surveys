@@ -33,6 +33,7 @@ interface CampaignLink {
   is_active: boolean;
   max_responses: number | null;
   current_responses: number;
+  is_anonymous: boolean;
 }
 
 const SurveyPage = () => {
@@ -59,9 +60,10 @@ const SurveyPage = () => {
         setSession(session);
         setUser(session?.user ?? null);
         
+        // For anonymous surveys, we don't require authentication
         if (!session && token) {
-          // If no session but there's a token, redirect to auth with return URL
-          navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+          // Check if this is an anonymous survey first
+          checkAnonymousSurvey();
         }
       }
     );
@@ -72,7 +74,8 @@ const SurveyPage = () => {
       setUser(session?.user ?? null);
       
       if (!session && token) {
-        navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        // Check if this is an anonymous survey first
+        checkAnonymousSurvey();
       } else {
         // Fetch survey data after auth is confirmed
         setTimeout(() => {
@@ -84,9 +87,67 @@ const SurveyPage = () => {
     return () => subscription.unsubscribe();
   }, [surveySlug, token, navigate]);
 
+  const checkAnonymousSurvey = async () => {
+    if (!surveySlug || !token) return;
+    
+    try {
+      // First, get the campaign
+      const { data: campaignData, error: campaignError } = await supabase
+        .from('campaign')
+        .select('*')
+        .eq('campaign_uri', surveySlug)
+        .maybeSingle();
+
+      if (campaignError || !campaignData) {
+        // If campaign not found, proceed with normal auth flow
+        navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        return;
+      }
+
+      // Check if this is an anonymous campaign link
+      const { data: linkData, error: linkError } = await supabase
+        .from('campaign_links')
+        .select('id, campaign_id, link_type, unique_token, name, description, is_active, max_responses, current_responses, is_anonymous')
+        .eq('unique_token', token)
+        .eq('campaign_id', campaignData.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (linkError || !linkData) {
+        // If link not found, proceed with normal auth flow
+        navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        return;
+      }
+
+      if (linkData.is_anonymous) {
+        // This is an anonymous survey, allow access without authentication
+        console.log('Anonymous survey detected, allowing access without authentication');
+        console.log('Campaign data:', campaignData);
+        console.log('Link data:', linkData);
+        setCampaign(campaignData);
+        setCampaignLink(linkData);
+        setLoading(false);
+      } else {
+        // Not anonymous, require authentication
+        console.log('Non-anonymous survey detected, requiring authentication');
+        navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      }
+    } catch (error) {
+      console.error('Error checking anonymous survey:', error);
+      // On error, proceed with normal auth flow
+      navigate(`/auth?returnUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    }
+  };
+
   const fetchSurveyData = async () => {
       if (!surveySlug) {
         setError('No survey specified');
+        setLoading(false);
+        return;
+      }
+
+      // If we already have campaign and campaignLink data from anonymous survey check, skip fetching
+      if (campaign && campaignLink) {
         setLoading(false);
         return;
       }
@@ -150,7 +211,7 @@ const SurveyPage = () => {
           // If no personal invitation found, try to find a shared campaign link
           const { data: linkData, error: linkError } = await supabase
             .from('campaign_links')
-            .select('*')
+            .select('id, campaign_id, link_type, unique_token, name, description, is_active, max_responses, current_responses, is_anonymous')
             .eq('unique_token', token)
             .eq('campaign_id', campaignData.id)
             .eq('is_active', true)
