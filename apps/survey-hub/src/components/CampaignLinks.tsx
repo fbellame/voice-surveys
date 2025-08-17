@@ -72,7 +72,7 @@ export const CampaignLinks: React.FC<CampaignLinksProps> = ({ campaignId, campai
 
   const generateSurveyUrl = (token: string) => {
     const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const baseUrl = isLocalDev ? window.location.origin : 'https://survey.generative-ai.ca';
+    const baseUrl = isLocalDev ? window.location.origin : 'https://voice-surveys-live-chatter.vercel.app';
     return `${baseUrl}/survey/${campaignUri}?token=${token}`;
   };
 
