@@ -5,9 +5,9 @@ from aiohttp import ClientResponseError
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
-# Set up logger with maximum debug logging
+# Set up logger
 logger = logging.getLogger("futures_survey_api")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Load environment variables
 load_dotenv()

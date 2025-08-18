@@ -24,9 +24,9 @@ from api_client import (
 
 load_dotenv()
 
-# Set up maximum debug logging
+# Set up logging configuration
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
@@ -34,10 +34,10 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("futures_survey_assistant")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-# Set all related loggers to DEBUG level
-logging.getLogger("futures_survey_api").setLevel(logging.DEBUG)
+# Set all related loggers to INFO level
+logging.getLogger("futures_survey_api").setLevel(logging.INFO)
 logging.getLogger("livekit.agents").setLevel(logging.INFO)
 logging.getLogger("livekit").setLevel(logging.INFO)
 logging.getLogger("aiohttp").setLevel(logging.INFO)
