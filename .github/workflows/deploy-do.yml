@@ -113,7 +113,7 @@ jobs:
               --ssh-keys "${{ steps.sshkey.outputs.key_id }}" \
               --vpc-uuid "$VPC_UUID" \
               --tag-names "$TAGS" \
-              --user-data-file cloud-init/base.yaml \
+              --user-data-file services/livekit-agent/cloud-init/base.yaml \
               --wait
           fi
 
@@ -169,7 +169,7 @@ jobs:
         run: |
           IP=${{ steps.ip.outputs.ip }}
           scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes future-survey-agent.env root@$IP:/tmp/future-survey-agent.env
-          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes systemd/livekit-agent@.service root@$IP:/tmp/livekit-agent@.service
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes services/livekit-agent/systemd/livekit-agent@.service root@$IP:/tmp/livekit-agent@.service
 
       - name: Remote configure systemd + docker login + start agent
         env:
