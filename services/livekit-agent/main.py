@@ -43,8 +43,13 @@ logging.getLogger("livekit").setLevel(logging.INFO)
 logging.getLogger("aiohttp").setLevel(logging.INFO)
 logging.getLogger("asyncio").setLevel(logging.INFO)
 
-# Suppress only the most verbose logs
+# Suppress verbose external library logs
 logging.getLogger("hpack.hpack").setLevel(logging.ERROR)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
     
 RunContext_T = RunContext[UserData]
 
