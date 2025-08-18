@@ -38,6 +38,10 @@ WORKDIR /home/appuser
 COPY services/livekit-agent/requirements.txt .
 RUN python -m pip install --user --no-cache-dir -r requirements.txt
 
+# Copy the shared packages first
+COPY packages/shared/ ./packages/shared/
+
+# Copy the livekit agent service
 COPY services/livekit-agent/ .
 
 # Build-only: provide a fake .env so any dotenv loader sees the vars
