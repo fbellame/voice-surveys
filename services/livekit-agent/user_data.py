@@ -25,6 +25,11 @@ class UserData:
     submission_id: Optional[str] = None
     call_id: Optional[str] = None
     
+    # Submission tracking - NEW FIELDS FOR HARDENING
+    submitted_answers: set[str] = field(default_factory=set)  # Track which answers have been submitted
+    survey_completed: bool = False  # Track if survey was marked as completed
+    finalization_attempted: bool = False  # Track if finalization was attempted
+    
     # LiveKit components
     agents: dict[str, Agent] = field(default_factory=dict)
     prev_agent: Optional[Agent] = None
@@ -43,5 +48,8 @@ class UserData:
             "s3_recording_url": self.s3_recording_url or "unknown",
             "submission_id": self.submission_id or "unknown",
             "campaign_id": self.campaign.get("id") if self.campaign else "unknown",
+            "submitted_answers": list(self.submitted_answers) if self.submitted_answers else "none",
+            "survey_completed": self.survey_completed,
+            "finalization_attempted": self.finalization_attempted,
         }
         return yaml.dump(data)
