@@ -29,7 +29,7 @@ The agent was experiencing data loss when clients disconnected before the finali
 **What**: When client disconnects, run a finalizer that submits any missing answers.
 
 **Implementation**:
-- Added `on_participant_disconnected()` event handler
+- Added `on_participant_disconnected()` event handler (synchronous wrapper with async task)
 - Finalizer runs with 5-second timeout
 - Checks for missing submissions and retries them
 - Marks survey as completed if all answers are present
@@ -118,7 +118,7 @@ The agent was experiencing data loss when clients disconnected before the finali
 - `submit_single_answer()`: Immediate answer submission
 - `finalize_survey_with_protection()`: Robust finalization with retries
 - `watchdog_survey_completion()`: Manual and automatic retry capability
-- `on_participant_disconnected()`: Disconnect event handler
+- `on_participant_disconnected()`: Disconnect event handler (synchronous wrapper)
 - `periodic_watchdog()`: Background monitoring task
 
 ## Testing Recommendations

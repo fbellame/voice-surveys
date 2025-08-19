@@ -688,38 +688,44 @@ async def entrypoint(ctx: agents.JobContext):
     )
     userdata.session = session
     # Set up disconnect detection before starting session
-    async def on_participant_disconnected(participant):
-        """Handle when a participant disconnects"""
+    def on_participant_disconnected(participant):
+        """Handle when a participant disconnects - synchronous wrapper"""
         logger.info(f"Participant {participant.identity} disconnected")
         
         # If this is the main participant (not the agent), run finalization
         if participant.identity != "agent":
             logger.info("Main participant disconnected - running finalization")
             
-            # Create a minimal context for finalization
-            class DisconnectContext:
-                def __init__(self, userdata):
-                    self.userdata = userdata
-            
-            disconnect_ctx = DisconnectContext(userdata)
-            
-            try:
-                # Attempt finalization with a timeout
-                import asyncio
-                finalization_success = await asyncio.wait_for(
-                    finalize_survey_with_protection(userdata, disconnect_ctx),
-                    timeout=5.0  # 5 second timeout for finalization
-                )
+            # Create async task for finalization
+            async def run_finalization():
+                # Create a minimal context for finalization
+                class DisconnectContext:
+                    def __init__(self, userdata):
+                        self.userdata = userdata
                 
-                if finalization_success:
-                    logger.info("Successfully finalized survey during participant disconnect")
-                else:
-                    logger.warning("Failed to finalize survey during participant disconnect - data may be lost")
+                disconnect_ctx = DisconnectContext(userdata)
+                
+                try:
+                    # Attempt finalization with a timeout
+                    import asyncio
+                    finalization_success = await asyncio.wait_for(
+                        finalize_survey_with_protection(userdata, disconnect_ctx),
+                        timeout=5.0  # 5 second timeout for finalization
+                    )
                     
-            except asyncio.TimeoutError:
-                logger.error("Finalization timeout during participant disconnect - data may be lost")
-            except Exception as e:
-                logger.error(f"Error during participant disconnect finalization: {e}")
+                    if finalization_success:
+                        logger.info("Successfully finalized survey during participant disconnect")
+                    else:
+                        logger.warning("Failed to finalize survey during participant disconnect - data may be lost")
+                        
+                except asyncio.TimeoutError:
+                    logger.error("Finalization timeout during participant disconnect - data may be lost")
+                except Exception as e:
+                    logger.error(f"Error during participant disconnect finalization: {e}")
+            
+            # Create the async task
+            import asyncio
+            asyncio.create_task(run_finalization())
     
     # Register the disconnect handler with the room
     ctx.room.on("participant_disconnected", on_participant_disconnected)

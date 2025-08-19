@@ -38,8 +38,7 @@ WORKDIR /home/appuser
 COPY services/livekit-agent/requirements.txt .
 RUN python -m pip install --user --no-cache-dir -r requirements.txt
 
-# Copy the shared packages first
-COPY packages/shared/ ./packages/shared/
+# Note: Removed shared packages dependency - types are now self-contained
 
 # Copy the livekit agent service
 COPY services/livekit-agent/ .
