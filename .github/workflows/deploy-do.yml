@@ -163,12 +163,12 @@ jobs:
             echo "AWS_REGION=${{ env.AWS_REGION }}"
             echo "SUPABASE_URL=${{ env.SUPABASE_URL }}"
             echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}"
-          } > future-survey-agent.env
+          } > livekit-agent.env
 
       - name: Copy env and systemd unit
         run: |
           IP=${{ steps.ip.outputs.ip }}
-          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes future-survey-agent.env root@$IP:/tmp/future-survey-agent.env
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes livekit-agent.env root@$IP:/tmp/livekit-agent.env
           scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes services/livekit-agent/systemd/livekit-agent@.service root@$IP:/tmp/livekit-agent@.service
 
       - name: Remote configure systemd + docker login + start agent
@@ -190,8 +190,8 @@ jobs:
           set -euo pipefail
 
           # 1) Env file
-          mv /tmp/future-survey-agent.env /etc/future-survey-agent.env
-          chmod 600 /etc/future-survey-agent.env
+          mv /tmp/livekit-agent.env /etc/livekit-agent.env
+          chmod 600 /etc/livekit-agent.env
 
           # 2) Systemd unit (ensure lowercase filename)
           mv /tmp/livekit-agent@.service /etc/systemd/system/livekit-agent@.service
@@ -222,4 +222,4 @@ jobs:
       - name: Tail first logs
         run: |
           IP=${{ steps.ip.outputs.ip }}
-          ssh -i ~/.ssh/id_ed25519 root@$IP 'journalctl -u livekit-agent@1 -n 200 --no-pager || docker logs --tail=200 future-survey-agent-1 || true'
+          ssh -i ~/.ssh/id_ed25519 root@$IP 'journalctl -u livekit-agent@1 -n 200 --no-pager || docker logs --tail=200 livekit-agent-1 || true'

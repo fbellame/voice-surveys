@@ -20,8 +20,8 @@ runcmd:
   - systemctl restart systemd-journald
 
   - install -d -m 0755 /etc
-  - touch /etc/future-survey-agent.env
-  - chmod 600 /etc/future-survey-agent.env
+  - touch /etc/livekit-agent.env
+  - chmod 600 /etc/livekit-agent.env
 
   - usermod -aG docker root
 

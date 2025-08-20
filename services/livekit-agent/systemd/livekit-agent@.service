@@ -1,33 +1,33 @@
 [Unit]
-Description=Future Survey Agent (instance %i)
+Description=LiveKit Agent (instance %i)
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service
 
 [Service]
-# Centralize the image/tag here (change if you push to a registry)
-Environment=DOCKER_IMAGE=fbellame/future-survey:latest
+# Docker image will be set via Environment variable from deployment
+# Environment=DOCKER_IMAGE=fbellame/livekit-agent:latest
 
 # Your env file (LIVEKIT_URL, keys, HEALTH_PORT=8081, etc.)
-EnvironmentFile=/etc/future-survey-agent.env
+EnvironmentFile=/etc/livekit-agent.env
 
 # Pull the latest image on every start
 ExecStartPre=/usr/bin/docker pull ${DOCKER_IMAGE}
 
 # Clean up any previous container with the same name (ignore errors)
-ExecStartPre=-/usr/bin/docker rm -f future-survey-agent-%i
+ExecStartPre=-/usr/bin/docker rm -f livekit-agent-%i
 
 # Run one container (maps host 8081 -> container 8081)
 ExecStart=/usr/bin/docker run \
-  --name future-survey-agent-%i \
+  --name livekit-agent-%i \
   --rm \
-  --env-file /etc/future-survey-agent.env \
+  --env-file /etc/livekit-agent.env \
   -p 8081:8081 \
   --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
   ${DOCKER_IMAGE}
 
 # Graceful stop -> give 30s for the agent to drain
-ExecStop=/usr/bin/docker stop -t 30 future-survey-agent-%i
+ExecStop=/usr/bin/docker stop -t 30 livekit-agent-%i
 
 Restart=always
 RestartSec=5

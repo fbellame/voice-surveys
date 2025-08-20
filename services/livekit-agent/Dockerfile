@@ -35,16 +35,25 @@ RUN chown -R appuser /home/appuser/.cache
 
 WORKDIR /home/appuser
 
-COPY services/livekit-agent/requirements.txt .
+COPY requirements.txt .
 RUN python -m pip install --user --no-cache-dir -r requirements.txt
 
 # Note: Removed shared packages dependency - types are now self-contained
 
-# Copy the livekit agent service
-COPY services/livekit-agent/ .
+# Copy the livekit agent service files
+COPY . .
 
-# Build-only: provide a fake .env so any dotenv loader sees the vars
-COPY .env.build .env
+# Create a temporary .env file for build-time operations
+RUN echo "DEEPGRAM_API_KEY=placeholder_for_build" > .env && \
+    echo "OPENAI_API_KEY=placeholder_for_build" >> .env && \
+    echo "LIVEKIT_URL=placeholder_for_build" >> .env && \
+    echo "LIVEKIT_API_KEY=placeholder_for_build" >> .env && \
+    echo "LIVEKIT_API_SECRET=placeholder_for_build" >> .env && \
+    echo "AWS_ACCESS_KEY_ID=placeholder_for_build" >> .env && \
+    echo "AWS_SECRET_ACCESS_KEY=placeholder_for_build" >> .env && \
+    echo "AWS_REGION=placeholder_for_build" >> .env && \
+    echo "SUPABASE_URL=placeholder_for_build" >> .env && \
+    echo "SUPABASE_KEY=placeholder_for_build" >> .env
 
 # Try the download, but do NOT fail the build if it complains about Supabase
 RUN python main.py download-files || echo "Skipping download-files during build (no Supabase)."
