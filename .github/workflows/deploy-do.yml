@@ -48,17 +48,11 @@ jobs:
         id: sshkey
         run: |
           set -euo pipefail
-
           KEY_NAME="gh-${GITHUB_REPOSITORY}-${GITHUB_RUN_ID}"
-
-          # DO fingerprints are MD5 (colon-separated). Strip the "MD5:" prefix.
           PUB_FP=$(ssh-keygen -E md5 -lf ~/.ssh/id_ed25519.pub | awk '{print $2}' | sed 's/^MD5://')
-
           echo "Local public key MD5 fingerprint: $PUB_FP"
 
-          # 1) Try to fetch by fingerprint (most reliable)
           EXIST_ID=$(doctl compute ssh-key get "$PUB_FP" --format ID --no-header 2>/dev/null || true)
-
           if [ -n "${EXIST_ID:-}" ]; then
             echo "Found existing DO SSH key (ID: $EXIST_ID)"
             echo "key_id=$EXIST_ID" >> $GITHUB_OUTPUT
@@ -72,15 +66,12 @@ jobs:
             --format ID --no-header 2>&1)
           STATUS=$?
           set -e
-
           if [ $STATUS -eq 0 ]; then
-            # Created successfully; CREATE_OUT is the ID
             echo "Created new DO SSH key (ID: $CREATE_OUT)"
             echo "key_id=$CREATE_OUT" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # If creation failed (e.g., 422 already exists), try to fetch again by fingerprint
           echo "Create failed (likely exists). Re-fetching by fingerprint..."
           EXIST_ID=$(doctl compute ssh-key get "$PUB_FP" --format ID --no-header 2>/dev/null || true)
           if [ -n "${EXIST_ID:-}" ]; then
@@ -92,7 +83,7 @@ jobs:
           echo "ERROR: Could not create or fetch the SSH key. Full output:"
           echo "$CREATE_OUT" >&2
           exit 1
-    
+
       - name: Optionally delete existing droplet
         if: ${{ github.event.inputs.recreate == 'true' }}
         run: |
@@ -128,18 +119,20 @@ jobs:
           echo "ip=$IP" >> $GITHUB_OUTPUT
           echo "Droplet IP: $IP"
 
-
       - name: Wait for SSH to respond
         run: |
+          set -e
           IP=${{ steps.ip.outputs.ip }}
           for i in {1..40}; do
             if nc -zv $IP 22 >/dev/null 2>&1; then
               echo "SSH up."
-              break
+              exit 0
             fi
             echo "Waiting for SSH ($i/40)..."
             sleep 5
           done
+          echo "SSH did not become ready in time" >&2
+          exit 1
 
       - name: Add host key to known_hosts
         run: |
@@ -147,11 +140,29 @@ jobs:
           mkdir -p ~/.ssh
           touch ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -R "$IP" 2>/dev/null || true
           ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts
+
+      # 🔧 THE FIX: wait for cloud-init to finish and Docker to be active
+      - name: Wait for cloud-init + Docker
+        run: |
+          IP=${{ steps.ip.outputs.ip }}
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP '
+            set -euo pipefail
+            command -v cloud-init >/dev/null && cloud-init status --wait || true
+            for i in {1..60}; do
+              if systemctl is-active --quiet docker; then
+                echo "docker is active"
+                break
+              fi
+              echo "waiting for docker ($i/60)..."
+              sleep 2
+            done
+            systemctl status docker --no-pager || true
+          '
 
       - name: Build env file from Secrets/Variables
         run: |
-          # Create local env file (never committed)
           {
             echo "DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}"
             echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
@@ -179,8 +190,6 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           IP=${{ steps.ip.outputs.ip }}
-
-          # Export env in the remote shell, THEN feed the script on stdin.
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
             "export DOCKER_IMAGE='${DOCKER_IMAGE}'; \
             export APP_PORT='${APP_PORT}'; \
@@ -189,15 +198,12 @@ jobs:
             bash -s" <<'REMOTE'
           set -euo pipefail
 
-          # 1) Env file
           mv /tmp/livekit-agent.env /etc/livekit-agent.env
           chmod 600 /etc/livekit-agent.env
 
-          # 2) Systemd unit (ensure lowercase filename)
           mv /tmp/livekit-agent@.service /etc/systemd/system/livekit-agent@.service
           chmod 644 /etc/systemd/system/livekit-agent@.service
 
-          # 3) Drop-in with DOCKER_IMAGE & APP_PORT
           install -d -m 0755 /etc/systemd/system/livekit-agent@.service.d
           cat >/etc/systemd/system/livekit-agent@.service.d/10-env.conf <<EOF
           [Service]
@@ -207,19 +213,16 @@ jobs:
 
           systemctl daemon-reload
 
-          # 4) (Optional) Docker Hub login
           if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           fi
 
-          # 5) Enable & start
           systemctl enable --now livekit-agent@1
-
-          # 6) Show status
           systemctl status --no-pager livekit-agent@1 || true
           REMOTE
 
       - name: Tail first logs
         run: |
           IP=${{ steps.ip.outputs.ip }}
-          ssh -i ~/.ssh/id_ed25519 root@$IP 'journalctl -u livekit-agent@1 -n 200 --no-pager || docker logs --tail=200 livekit-agent-1 || true'
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
+            'journalctl -u livekit-agent@1 -n 200 --no-pager || docker logs --tail=200 livekit-agent-1 || true'
