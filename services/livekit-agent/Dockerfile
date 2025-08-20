@@ -35,13 +35,14 @@ RUN chown -R appuser /home/appuser/.cache
 
 WORKDIR /home/appuser
 
-COPY requirements.txt .
+# Copy requirements.txt from the correct path (build context is repository root)
+COPY services/livekit-agent/requirements.txt .
 RUN python -m pip install --user --no-cache-dir -r requirements.txt
 
 # Note: Removed shared packages dependency - types are now self-contained
 
 # Copy the livekit agent service files
-COPY . .
+COPY services/livekit-agent/ .
 
 # Create a temporary .env file for build-time operations
 RUN echo "DEEPGRAM_API_KEY=placeholder_for_build" > .env && \
