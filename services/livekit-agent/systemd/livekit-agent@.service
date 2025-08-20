@@ -1,38 +1,59 @@
+# /etc/systemd/system/livekit-agent@.service
 [Unit]
 Description=LiveKit Agent (instance %i)
-Wants=network-online.target
+Wants=network-online.target docker.service
 After=network-online.target docker.service
 Requires=docker.service
+ConditionPathExists=/etc/livekit-agent.env
+StartLimitIntervalSec=120
+StartLimitBurst=10
 
 [Service]
-# Docker image will be set via Environment variable from deployment
-# Environment=DOCKER_IMAGE=fbellame/livekit-agent:latest
+Type=simple
 
-# Your env file (LIVEKIT_URL, keys, HEALTH_PORT=8081, etc.)
+# App env (LIVEKIT_URL, keys, etc.)
 EnvironmentFile=/etc/livekit-agent.env
 
-# Pull the latest image on every start
-ExecStartPre=/usr/bin/docker pull ${DOCKER_IMAGE}
+# Sensible defaults (overridable via drop-in 10-env.conf)
+Environment=APP_PORT=8081
+Environment=CONTAINER_NAME=livekit-agent-%i
 
-# Clean up any previous container with the same name (ignore errors)
-ExecStartPre=-/usr/bin/docker rm -f livekit-agent-%i
+# Wait for Docker, optional registry login, robust pull with retries, fallback to cached image
+ExecStartPre=/bin/bash -lc 'set -euo pipefail; \
+  for i in {1..30}; do docker info >/dev/null 2>&1 && break || sleep 1; done; \
+  img="${DOCKER_IMAGE:?DOCKER_IMAGE not set}"; \
+  if [ -n "${DOCKER_USERNAME:-}" ] && [ -n "${DOCKER_PASSWORD:-}" ]; then \
+    echo "$DOCKER_PASSWORD" | docker login -u "${DOCKER_USERNAME}" --password-stdin || true; \
+  fi; \
+  ok=""; for i in 1 2 3 4 5; do \
+    docker pull "$img" && ok="y" && break || { echo "docker pull failed (try $i)"; sleep $((i*i)); }; \
+  done; \
+  [ -n "$ok" ] || docker image inspect "$img" >/dev/null'
 
-# Run one container (maps host 8081 -> container 8081)
+# Clean any previous container (ignore errors)
+ExecStartPre=-/usr/bin/docker rm -f ${CONTAINER_NAME}
+
+# Run container (host APP_PORT -> container APP_PORT)
 ExecStart=/usr/bin/docker run \
-  --name livekit-agent-%i \
+  --name ${CONTAINER_NAME} \
   --rm \
   --env-file /etc/livekit-agent.env \
-  -p 8081:8081 \
+  -p ${APP_PORT}:${APP_PORT} \
   --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
   ${DOCKER_IMAGE}
 
-# Graceful stop -> give 30s for the agent to drain
-ExecStop=/usr/bin/docker stop -t 30 livekit-agent-%i
+# Graceful stop + cleanup
+ExecStop=/usr/bin/docker stop -t 30 ${CONTAINER_NAME}
+ExecStopPost=-/usr/bin/docker rm -f ${CONTAINER_NAME}
 
+# Keep it alive but avoid restart storms
 Restart=always
 RestartSec=5
 TimeoutStartSec=0
+KillMode=control-group
 KillSignal=SIGTERM
+LimitNOFILE=65536
+OOMScoreAdjust=-900
 
 [Install]
 WantedBy=multi-user.target
