@@ -17,6 +17,7 @@ env:
   TAGS: ${{ vars.TAGS || 'prod' }}
   DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
   APP_PORT: ${{ vars.APP_PORT || '8081' }}
+  HEALTH_CHECK_PORT: ${{ vars.HEALTH_CHECK_PORT || '8080' }}
 
   # Non-secret constants
   LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
@@ -186,6 +187,7 @@ jobs:
         env:
           DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
           APP_PORT: ${{ env.APP_PORT }}
+          HEALTH_CHECK_PORT: ${{ env.HEALTH_CHECK_PORT }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
@@ -193,6 +195,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
             "export DOCKER_IMAGE='${DOCKER_IMAGE}'; \
             export APP_PORT='${APP_PORT}'; \
+            export HEALTH_CHECK_PORT='${HEALTH_CHECK_PORT}'; \
             export DOCKERHUB_USERNAME='${DOCKERHUB_USERNAME}'; \
             export DOCKERHUB_TOKEN='${DOCKERHUB_TOKEN}'; \
             bash -s" <<'REMOTE'
@@ -209,6 +212,7 @@ jobs:
           [Service]
           Environment=DOCKER_IMAGE=${DOCKER_IMAGE}
           Environment=APP_PORT=${APP_PORT}
+          Environment=HEALTH_CHECK_PORT=${HEALTH_CHECK_PORT}
           EOF
 
           systemctl daemon-reload

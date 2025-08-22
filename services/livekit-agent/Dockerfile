@@ -26,6 +26,7 @@ RUN apt-get update && \
     apt-get install -y \
     gcc \
     python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 USER appuser
@@ -63,8 +64,15 @@ RUN python main.py download-files || echo "Skipping download-files during build 
 RUN rm -f .env
 
 
-# expose healthcheck port
-EXPOSE 8081
+# Set environment variable for health check port
+ENV HEALTH_CHECK_PORT=8080
+
+# Expose health check port
+EXPOSE 8080
+
+# Health check configuration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the application.
 CMD ["python", "main.py", "start"]
