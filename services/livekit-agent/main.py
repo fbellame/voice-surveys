@@ -30,9 +30,10 @@ from api_client import (
 from datadog import initialize, statsd
 
 options = {
-    "statsd_host": "127.0.0.1",
+    "statsd_host": "host.docker.internal",  # add this in your Python agent
     "statsd_port": 8125,
 }
+
 initialize(**options)
 
 

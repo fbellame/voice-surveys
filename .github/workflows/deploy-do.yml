@@ -190,6 +190,7 @@ jobs:
           HEALTH_CHECK_PORT: ${{ env.HEALTH_CHECK_PORT }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
         run: |
           IP=${{ steps.ip.outputs.ip }}
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
@@ -198,6 +199,7 @@ jobs:
             export HEALTH_CHECK_PORT='${HEALTH_CHECK_PORT}'; \
             export DOCKERHUB_USERNAME='${DOCKERHUB_USERNAME}'; \
             export DOCKERHUB_TOKEN='${DOCKERHUB_TOKEN}'; \
+            export DD_API_KEY='${DD_API_KEY}'; \
             bash -s" <<'REMOTE'
           set -euo pipefail
 
@@ -220,6 +222,56 @@ jobs:
           if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           fi
+
+          # Install Datadog Agent
+          echo "Installing Datadog Agent..."
+          DD_APM_INSTRUMENTATION_LIBRARIES=java:1,python:3,js:5,php:1,dotnet:3,ruby:2 \
+          DD_APM_INSTRUMENTATION_ENABLED=docker \
+          DD_NO_AGENT_INSTALL=true \
+          bash -c "$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)"
+
+          # Create Datadog agent systemd service
+          cat >/etc/systemd/system/datadog-agent.service <<EOF
+          [Unit]
+          Description=Datadog Agent
+          After=docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=simple
+          ExecStartPre=-/usr/bin/docker rm -f dd-agent
+          ExecStart=/usr/bin/docker run -d --name dd-agent \\
+            -p 8125:8125/udp \\
+            -e DD_API_KEY=${DD_API_KEY} \\
+            -e DD_SITE="us5.datadoghq.com" \\
+            -e DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true \\
+            -e DD_ENV=dev \\
+            -e DD_APM_ENABLED=true \\
+            -e DD_APM_NON_LOCAL_TRAFFIC=true \\
+            -e DD_APM_RECEIVER_SOCKET=/var/run/datadog/apm.socket \\
+            -e DD_DOGSTATSD_SOCKET=/var/run/datadog/dsd.socket \\
+            -v /var/run/datadog:/var/run/datadog \\
+            -v /var/run/docker.sock:/var/run/docker.sock:ro \\
+            -v /proc/:/host/proc/:ro \\
+            -v /sys/fs/cgroup/:/host/sys/fs/cgroup:ro \\
+            -v /var/lib/docker/containers:/var/lib/docker/containers:ro \\
+            gcr.io/datadoghq/agent:7
+          ExecStop=/usr/bin/docker stop dd-agent
+          ExecStopPost=-/usr/bin/docker rm -f dd-agent
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          # Create datadog directory for socket mounting
+          mkdir -p /var/run/datadog
+
+          # Enable and start Datadog agent
+          systemctl daemon-reload
+          systemctl enable --now datadog-agent
+          systemctl status --no-pager datadog-agent || true
 
           systemctl enable --now livekit-agent@1
           systemctl status --no-pager livekit-agent@1 || true
