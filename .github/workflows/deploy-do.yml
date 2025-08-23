@@ -23,6 +23,10 @@ env:
   LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
   AWS_REGION: ${{ vars.AWS_REGION }}
   SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+  
+  # DataDog configuration
+  DD_SITE: ${{ vars.DD_SITE || 'us5.datadoghq.com' }}
+  DD_ENV: ${{ vars.DD_ENV || 'prod' }}
 
 jobs:
   deploy:
@@ -162,8 +166,9 @@ jobs:
             systemctl status docker --no-pager || true
           '
 
-      - name: Build env file from Secrets/Variables
+      - name: Build env files from Secrets/Variables
         run: |
+          # LiveKit Agent environment
           {
             echo "DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}"
             echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
@@ -175,15 +180,27 @@ jobs:
             echo "AWS_REGION=${{ env.AWS_REGION }}"
             echo "SUPABASE_URL=${{ env.SUPABASE_URL }}"
             echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}"
+            echo "DOCKER_IMAGE=${{ env.DOCKER_IMAGE }}"
+            echo "APP_PORT=${{ env.APP_PORT }}"
+            echo "HEALTH_CHECK_PORT=${{ env.HEALTH_CHECK_PORT }}"
           } > livekit-agent.env
 
-      - name: Copy env and systemd unit
+          # DataDog environment
+          {
+            echo "DD_API_KEY=${{ secrets.DD_API_KEY }}"
+            echo "DD_SITE=${{ vars.DD_SITE || 'us5.datadoghq.com' }}"
+            echo "DD_ENV=${{ vars.DD_ENV || 'prod' }}"
+          } > datadog.env
+
+      - name: Copy env files, systemd unit, and docker-compose
         run: |
           IP=${{ steps.ip.outputs.ip }}
           scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes livekit-agent.env root@$IP:/tmp/livekit-agent.env
-          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes services/livekit-agent/systemd/livekit-agent@.service root@$IP:/tmp/livekit-agent@.service
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes datadog.env root@$IP:/tmp/datadog.env
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes services/livekit-agent/systemd/livekit-agent-compose@.service root@$IP:/tmp/livekit-agent-compose@.service
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes services/livekit-agent/docker-compose.yml root@$IP:/tmp/docker-compose.yml
 
-      - name: Remote configure systemd + docker login + start agent
+      - name: Remote configure systemd + docker login + start agent with DataDog
         env:
           DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
           APP_PORT: ${{ env.APP_PORT }}
@@ -201,32 +218,67 @@ jobs:
             bash -s" <<'REMOTE'
           set -euo pipefail
 
+          # Install Docker Compose if not present
+          if ! command -v docker-compose >/dev/null 2>&1; then
+            echo "Installing Docker Compose..."
+            curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            chmod +x /usr/local/bin/docker-compose
+            ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+          fi
+
+          # Setup environment files
           mv /tmp/livekit-agent.env /etc/livekit-agent.env
           chmod 600 /etc/livekit-agent.env
 
-          mv /tmp/livekit-agent@.service /etc/systemd/system/livekit-agent@.service
-          chmod 644 /etc/systemd/system/livekit-agent@.service
+          mv /tmp/datadog.env /etc/datadog.env
+          chmod 600 /etc/datadog.env
 
-          install -d -m 0755 /etc/systemd/system/livekit-agent@.service.d
-          cat >/etc/systemd/system/livekit-agent@.service.d/10-env.conf <<EOF
+          # Setup application directory
+          mkdir -p /opt/livekit-agent
+          mv /tmp/docker-compose.yml /opt/livekit-agent/docker-compose.yml
+
+          # Setup systemd service
+          mv /tmp/livekit-agent-compose@.service /etc/systemd/system/livekit-agent-compose@.service
+          chmod 644 /etc/systemd/system/livekit-agent-compose@.service
+
+          # Create systemd environment override
+          install -d -m 0755 /etc/systemd/system/livekit-agent-compose@.service.d
+          cat >/etc/systemd/system/livekit-agent-compose@.service.d/10-env.conf <<EOF
           [Service]
           Environment=DOCKER_IMAGE=${DOCKER_IMAGE}
           Environment=APP_PORT=${APP_PORT}
           Environment=HEALTH_CHECK_PORT=${HEALTH_CHECK_PORT}
+          Environment=INSTANCE=1
           EOF
 
           systemctl daemon-reload
 
+          # Create monitoring network
+          docker network create monitoring || true
+
+          # Docker login
           if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
           fi
 
-          systemctl enable --now livekit-agent@1
-          systemctl status --no-pager livekit-agent@1 || true
+          # Start the service
+          systemctl enable --now livekit-agent-compose@1
+          systemctl status --no-pager livekit-agent-compose@1 || true
           REMOTE
 
       - name: Tail first logs
         run: |
           IP=${{ steps.ip.outputs.ip }}
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP \
-            'journalctl -u livekit-agent@1 -n 200 --no-pager || docker logs --tail=200 livekit-agent-1 || true'
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes root@$IP '
+            echo "=== Systemd Service Logs ==="
+            journalctl -u livekit-agent-compose@1 -n 100 --no-pager || true
+            echo
+            echo "=== LiveKit Agent Container Logs ==="
+            docker logs --tail=100 livekit-agent-1 || true
+            echo
+            echo "=== DataDog Agent Container Logs ==="
+            docker logs --tail=100 dd-agent || true
+            echo
+            echo "=== Container Status ==="
+            docker ps -a || true
+          '

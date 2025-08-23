@@ -8,9 +8,9 @@ The refactor from a standalone repository to a monorepo structure broke the depl
 **Problem**: The systemd service, container names, and environment files were using "future-survey-agent" instead of "livekit-agent".
 
 **Fixed**:
-- Systemd service: `livekit-agent@.service`
-- Container names: `livekit-agent-%i`
-- Environment file: `/etc/livekit-agent.env`
+- Systemd service: `livekit-agent-compose@.service`
+- Container names: `livekit-agent-%i` and `dd-agent`
+- Environment files: `/etc/livekit-agent.env` and `/etc/datadog.env`
 - Docker image: `fbellame/livekit-agent:latest`
 
 ### 2. Dockerfile Path Issues
@@ -32,10 +32,11 @@ The refactor from a standalone repository to a monorepo structure broke the depl
 
 ## Files Modified
 
-1. **`services/livekit-agent/systemd/livekit-agent@.service`**
+1. **`services/livekit-agent/systemd/livekit-agent-compose@.service`**
    - Updated description and container names
-   - Fixed environment file path
+   - Fixed environment file paths
    - Removed hardcoded Docker image
+   - Added Docker Compose orchestration
 
 2. **`services/livekit-agent/cloud-init/base.yaml`**
    - Updated environment file path to `/etc/livekit-agent.env`
@@ -74,6 +75,7 @@ All existing secrets should continue to work:
 - `SUPABASE_KEY`
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
+- `DD_API_KEY` (new - for DataDog monitoring)
 
 ## Deployment Process
 

@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  livekit-agent:
+    image: ${DOCKER_IMAGE:-docker.io/fbellame/livekit-agent:latest}
+    container_name: livekit-agent-${INSTANCE:-default}
+    restart: unless-stopped
+    networks:
+      - monitoring
+    ports:
+      - "${APP_PORT:-8081}:${APP_PORT:-8081}"
+      - "${HEALTH_CHECK_PORT:-8080}:${HEALTH_CHECK_PORT:-8080}"
+    env_file:
+      - /etc/livekit-agent.env
+    environment:
+      - APP_PORT=${APP_PORT:-8081}
+      - HEALTH_CHECK_PORT=${HEALTH_CHECK_PORT:-8080}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${HEALTH_CHECK_PORT:-8080}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - datadog-agent
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: dd-agent
+    restart: unless-stopped
+    networks:
+      - monitoring
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-us5.datadoghq.com}
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_APM_RECEIVER_SOCKET=/var/run/datadog/apm.socket
+      - DD_DOGSTATSD_SOCKET=/var/run/datadog/dsd.socket
+      - DD_APM_INSTRUMENTATION_LIBRARIES=java:1,python:3,js:5,php:1,dotnet:3,ruby:2
+      - DD_APM_INSTRUMENTATION_ENABLED=docker
+      - DD_NO_AGENT_INSTALL=true
+    volumes:
+      - /var/run/datadog:/var/run/datadog
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  monitoring:
+    external: true

@@ -21,15 +21,17 @@ docker build -t future-survey .
 docker run -p 8081:8081 --env-file .env future-survey
 
 ## with systemd (more stable because survive VM reboot)
-cp livekit-agent@.service /etc/systemd/system/
+cp livekit-agent-compose@.service /etc/systemd/system/
 
-# add env variable
-nano /etc/future-survey-agent.env
+# add env variables
+nano /etc/livekit-agent.env
+nano /etc/datadog.env
 
 # launch and monitor logs
 sudo systemctl daemon-reload
-sudo systemctl enable --now livekit-agent@1
-docker logs -f future-survey-agent-1
+sudo systemctl enable --now livekit-agent-compose@1
+docker logs -f livekit-agent-1
+docker logs -f dd-agent
 
 ```
 

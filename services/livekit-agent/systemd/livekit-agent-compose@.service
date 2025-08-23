@@ -1,25 +1,36 @@
-# /etc/systemd/system/livekit-agent@.service
+# /etc/systemd/system/livekit-agent-compose@.service
 [Unit]
-Description=LiveKit Agent (instance %i)
+Description=LiveKit Agent with DataDog Monitoring (instance %i)
 Wants=network-online.target docker.service
 After=network-online.target docker.service
 Requires=docker.service
 ConditionPathExists=/etc/livekit-agent.env
+ConditionPathExists=/etc/datadog.env
 StartLimitIntervalSec=120
 StartLimitBurst=10
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 
 # App env (LIVEKIT_URL, keys, etc.)
 EnvironmentFile=/etc/livekit-agent.env
+EnvironmentFile=/etc/datadog.env
 
 # Sensible defaults (overridable via drop-in 10-env.conf)
 Environment=APP_PORT=8081
 Environment=HEALTH_CHECK_PORT=8080
-Environment=CONTAINER_NAME=livekit-agent-%i
+Environment=INSTANCE=%i
+Environment=DD_SITE=us5.datadoghq.com
+Environment=DD_ENV=dev
 
-# Wait for Docker, optional registry login, robust pull with retries, fallback to cached image
+# Working directory for docker-compose
+WorkingDirectory=/opt/livekit-agent
+
+# Create monitoring network if it doesn't exist
+ExecStartPre=/usr/bin/docker network create monitoring || true
+
+# Wait for Docker, optional registry login, robust pull with retries
 ExecStartPre=/bin/bash -lc 'set -euo pipefail; \
   for i in {1..30}; do docker info >/dev/null 2>&1 && break || sleep 1; done; \
   img="${DOCKER_IMAGE:?DOCKER_IMAGE not set}"; \
@@ -31,32 +42,16 @@ ExecStartPre=/bin/bash -lc 'set -euo pipefail; \
   done; \
   [ -n "$ok" ] || docker image inspect "$img" >/dev/null'
 
-# Clean any previous container (ignore errors)
-ExecStartPre=-/usr/bin/docker rm -f ${CONTAINER_NAME}
+# Start the services
+ExecStart=/usr/local/bin/docker-compose up -d
 
-# Run container (host APP_PORT -> container APP_PORT, health check port)
-ExecStart=/usr/bin/docker run \
-  --name ${CONTAINER_NAME} \
-  --rm \
-  --env-file /etc/livekit-agent.env \
-  -p ${APP_PORT}:${APP_PORT} \
-  -p ${HEALTH_CHECK_PORT}:${HEALTH_CHECK_PORT} \
-  --health-cmd="curl -f http://localhost:${HEALTH_CHECK_PORT}/health || exit 1" \
-  --health-interval=30s \
-  --health-timeout=10s \
-  --health-start-period=60s \
-  --health-retries=3 \
-  --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
-  ${DOCKER_IMAGE}
-
-# Graceful stop + cleanup
-ExecStop=/usr/bin/docker stop -t 30 ${CONTAINER_NAME}
-ExecStopPost=-/usr/bin/docker rm -f ${CONTAINER_NAME}
+# Stop the services
+ExecStop=/usr/local/bin/docker-compose down
 
 # Keep it alive but avoid restart storms
 Restart=always
 RestartSec=5
-TimeoutStartSec=0
+TimeoutStartSec=300
 KillMode=control-group
 KillSignal=SIGTERM
 LimitNOFILE=65536
