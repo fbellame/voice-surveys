@@ -26,9 +26,6 @@ Environment=DD_ENV=dev
 # Working directory for docker-compose
 WorkingDirectory=/opt/livekit-agent
 
-# Create monitoring network if it doesn't exist
-ExecStartPre=/usr/bin/docker network create monitoring 2>/dev/null || true
-
 # Wait for Docker, optional registry login, robust pull with retries
 ExecStartPre=/bin/bash -lc 'set -euo pipefail; \
   for i in {1..30}; do docker info >/dev/null 2>&1 && break || sleep 1; done; \
@@ -42,7 +39,7 @@ ExecStartPre=/bin/bash -lc 'set -euo pipefail; \
   [ -n "$ok" ] || docker image inspect "$img" >/dev/null'
 
 # Start the services and keep them running
-ExecStart=/usr/local/bin/docker-compose up
+ExecStart=/usr/local/bin/docker-compose up --remove-orphans
 
 # Stop the services
 ExecStop=/usr/local/bin/docker-compose down
