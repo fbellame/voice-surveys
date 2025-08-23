@@ -10,8 +10,7 @@ StartLimitIntervalSec=120
 StartLimitBurst=10
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 
 # App env (LIVEKIT_URL, keys, etc.)
 EnvironmentFile=/etc/livekit-agent.env
@@ -42,8 +41,8 @@ ExecStartPre=/bin/bash -lc 'set -euo pipefail; \
   done; \
   [ -n "$ok" ] || docker image inspect "$img" >/dev/null'
 
-# Start the services
-ExecStart=/usr/local/bin/docker-compose up -d
+# Start the services and keep them running
+ExecStart=/usr/local/bin/docker-compose up
 
 # Stop the services
 ExecStop=/usr/local/bin/docker-compose down
