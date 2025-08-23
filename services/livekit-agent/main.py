@@ -30,9 +30,10 @@ from api_client import (
 from datadog import initialize, statsd
 
 options = {
-    "statsd_host": "host.docker.internal",
+    "statsd_host": "dd-agent",  # internal DNS resolves inside Docker network
     "statsd_port": 8125,
 }
+
 initialize(**options)
 
 
