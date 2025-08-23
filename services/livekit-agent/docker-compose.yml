@@ -15,6 +15,14 @@ services:
     environment:
       - APP_PORT=${APP_PORT:-8081}
       - HEALTH_CHECK_PORT=${HEALTH_CHECK_PORT:-8080}
+      # DataDog APM environment variables for Python
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_SERVICE=livekit-agent
+      - DD_VERSION=${DOCKER_IMAGE_TAG:-latest}
+      - DD_AGENT_HOST=datadog-agent
+      - DD_TRACE_AGENT_PORT=8126
+      - DD_PROFILING_ENABLED=true
+      - DD_LOGS_INJECTION=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${HEALTH_CHECK_PORT:-8080}/health"]
       interval: 30s

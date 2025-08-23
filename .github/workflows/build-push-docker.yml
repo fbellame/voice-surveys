@@ -65,8 +65,8 @@ jobs:
           mkdir -p deployment-artifacts
           cp services/livekit-agent/docker-compose.yml deployment-artifacts/
           cp services/livekit-agent/systemd/livekit-agent-compose@.service deployment-artifacts/
-          cp services/livekit-agent/deploy-vm.sh deployment-artifacts/
-          chmod +x deployment-artifacts/deploy-vm.sh
+          cp services/livekit-agent/verify-deployment.sh deployment-artifacts/
+          chmod +x deployment-artifacts/verify-deployment.sh
           
           # Create a deployment README
           cat > deployment-artifacts/README.md << 'EOF'
@@ -75,17 +75,25 @@ jobs:
           This package contains everything needed to deploy LiveKit Agent with DataDog monitoring on a DigitalOcean VM.
           
           ## Files:
-          - `deploy-vm.sh` - Main deployment script
           - `docker-compose.yml` - Docker Compose configuration
           - `livekit-agent-compose@.service` - Systemd service file
+          - `verify-deployment.sh` - Deployment verification script
           
           ## Quick Start:
           1. Upload these files to your VM
-          2. Run: `sudo bash deploy-vm.sh`
-          3. Configure environment files
-          4. Start the service
+          2. Configure environment files
+          3. Start the service using the deploy-do.yml workflow
+          4. Run verification: sudo bash verify-deployment.sh
           
-          See the script output for detailed instructions.
+          ## Manual Deployment:
+          If you need to deploy manually:
+          1. Copy the files to your VM
+          2. Create environment files: /etc/livekit-agent.env and /etc/datadog.env
+          3. Install Docker Compose
+          4. Run: systemctl enable --now livekit-agent-compose@1
+          5. Verify: sudo bash verify-deployment.sh
+          
+          See DEPLOYMENT_WITH_DATADOG.md for detailed instructions.
           EOF
 
       - name: Upload deployment artifacts
