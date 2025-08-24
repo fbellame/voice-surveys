@@ -16,7 +16,6 @@ Add these secrets in your GitHub repository settings (Settings > Secrets and var
 - `DIGITALOCEAN_ACCESS_TOKEN` - Your DigitalOcean API token
 
 ### Docker Hub
-- `DOCKERHUB_USERNAME` - Your Docker Hub username
 - `DOCKERHUB_TOKEN` - Your Docker Hub access token
 
 ### Application Secrets
@@ -42,6 +41,7 @@ Add these variables in your GitHub repository settings (Settings > Secrets and v
 - `DOCKER_IMAGE` - Docker image name (default: `fbellame/livekit-agent`)
 - `APP_PORT` - Application port (default: `8080`)
 - `SERVICE_PORT` - Service port (default: `80`)
+- `DOCKERHUB_USERNAME` - Your Docker Hub username
 
 ### External Services
 - `LIVEKIT_URL` - LiveKit server URL
