@@ -44,7 +44,7 @@ RUN python -m pip install --user --no-cache-dir -r requirements.txt
 
 # Copy the livekit agent service files
 COPY services/livekit-agent/ .
-
+USER root
 # Create a temporary .env file for build-time operations
 RUN echo "DEEPGRAM_API_KEY=placeholder_for_build" > .env && \
     echo "OPENAI_API_KEY=placeholder_for_build" >> .env && \
@@ -62,7 +62,7 @@ RUN python main.py download-files || echo "Skipping download-files during build 
 
 # Clean up so the runtime isn't confused by a blank .env
 RUN rm -f .env
-
+USER appuser
 
 # Set environment variable for health check port
 ENV HEALTH_CHECK_PORT=8080

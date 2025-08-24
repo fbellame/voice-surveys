@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: livekit-agent
+  template:
+    metadata:
+      labels:
+        app: livekit-agent
+    spec:
+      containers:
+        - name: livekit-agent
+          image: fbellame/livekit-agent:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: livekit-agent-secrets

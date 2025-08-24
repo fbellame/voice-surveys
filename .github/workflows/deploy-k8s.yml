@@ -1,0 +1,237 @@
+name: Deploy to DigitalOcean Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: false
+        default: "latest"
+      recreate_secrets:
+        description: "Recreate Kubernetes secrets?"
+        required: false
+        default: "false"
+
+env:
+  CLUSTER_ID: ${{ vars.CLUSTER_ID }}
+  CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+  REGION: ${{ vars.REGION || 'tor1' }}
+  NAMESPACE: ${{ vars.NAMESPACE || 'livekit-agent' }}
+  DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE || 'fbellame/livekit-agent' }}
+  APP_PORT: ${{ vars.APP_PORT || '8080' }}
+  SERVICE_PORT: ${{ vars.SERVICE_PORT || '80' }}
+
+  # Non-secret constants
+  LIVEKIT_URL: ${{ vars.LIVEKIT_URL }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Configure kubectl
+        run: |
+          doctl kubernetes cluster kubeconfig save ${{ env.CLUSTER_ID }}
+          kubectl config use-context do-${{ env.REGION }}-${{ env.CLUSTER_NAME }}
+
+      - name: Create namespace if it doesn't exist
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create Docker registry secret
+        run: |
+          kubectl create secret docker-registry dockerhub-cred \
+            --docker-server=https://index.docker.io/v1/ \
+            --docker-username=${{ secrets.DOCKERHUB_USERNAME }} \
+            --docker-password=${{ secrets.DOCKERHUB_TOKEN }} \
+            --namespace=${{ env.NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Patch default service account with image pull secrets
+        run: |
+          kubectl patch serviceaccount default -n ${{ env.NAMESPACE }} \
+            -p '{"imagePullSecrets":[{"name":"dockerhub-cred"}]}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create application secrets
+        if: ${{ github.event.inputs.recreate_secrets == 'true' }}
+        run: |
+          # Delete existing secrets if recreating
+          kubectl delete secret livekit-agent-secrets -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          
+          # Create new secrets from GitHub secrets and variables
+          kubectl create secret generic livekit-agent-secrets \
+            --from-literal=DEEPGRAM_API_KEY="${{ secrets.DEEPGRAM_API_KEY }}" \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=LIVEKIT_URL="${{ env.LIVEKIT_URL }}" \
+            --from-literal=LIVEKIT_API_KEY="${{ secrets.LIVEKIT_API_KEY }}" \
+            --from-literal=LIVEKIT_API_SECRET="${{ secrets.LIVEKIT_API_SECRET }}" \
+            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --from-literal=AWS_REGION="${{ env.AWS_REGION }}" \
+            --from-literal=SUPABASE_URL="${{ env.SUPABASE_URL }}" \
+            --from-literal=SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
+            --namespace=${{ env.NAMESPACE }}
+
+      - name: Create application secrets (if not recreating)
+        if: ${{ github.event.inputs.recreate_secrets != 'true' }}
+        run: |
+          # Create secrets only if they don't exist
+          if ! kubectl get secret livekit-agent-secrets -n ${{ env.NAMESPACE }} >/dev/null 2>&1; then
+            kubectl create secret generic livekit-agent-secrets \
+              --from-literal=DEEPGRAM_API_KEY="${{ secrets.DEEPGRAM_API_KEY }}" \
+              --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              --from-literal=LIVEKIT_URL="${{ env.LIVEKIT_URL }}" \
+              --from-literal=LIVEKIT_API_KEY="${{ secrets.LIVEKIT_API_KEY }}" \
+              --from-literal=LIVEKIT_API_SECRET="${{ secrets.LIVEKIT_API_SECRET }}" \
+              --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+              --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+              --from-literal=AWS_REGION="${{ env.AWS_REGION }}" \
+              --from-literal=SUPABASE_URL="${{ env.SUPABASE_URL }}" \
+              --from-literal=SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
+              --namespace=${{ env.NAMESPACE }}
+          fi
+
+      - name: Generate deployment YAML
+        run: |
+          cat > k8s-deployment.yaml <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: livekit-agent
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: livekit-agent
+            template:
+              metadata:
+                labels:
+                  app: livekit-agent
+              spec:
+                imagePullSecrets:
+                  - name: dockerhub-cred
+                containers:
+                  - name: livekit-agent
+                    image: ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}
+                    ports:
+                      - containerPort: ${{ env.APP_PORT }}
+                    envFrom:
+                      - secretRef:
+                          name: livekit-agent-secrets
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "250m"
+                      limits:
+                        memory: "512Mi"
+                        cpu: "500m"
+                    livenessProbe:
+                      httpGet:
+                        path: /health
+                        port: ${{ env.APP_PORT }}
+                      initialDelaySeconds: 30
+                      periodSeconds: 10
+                    readinessProbe:
+                      httpGet:
+                        path: /health
+                        port: ${{ env.APP_PORT }}
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+          EOF
+
+      - name: Generate service YAML
+        run: |
+          cat > k8s-service.yaml <<EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: livekit-agent
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            type: LoadBalancer
+            selector:
+              app: livekit-agent
+            ports:
+              - protocol: TCP
+                port: ${{ env.SERVICE_PORT }}
+                targetPort: ${{ env.APP_PORT }}
+          EOF
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Apply deployment
+          kubectl apply -f k8s-deployment.yaml
+          
+          # Apply service
+          kubectl apply -f k8s-service.yaml
+          
+          # Wait for deployment to be ready
+          kubectl rollout status deployment/livekit-agent -n ${{ env.NAMESPACE }} --timeout=300s
+
+      - name: Get deployment status
+        run: |
+          echo "=== Deployment Status ==="
+          kubectl get deployment livekit-agent -n ${{ env.NAMESPACE }}
+          
+          echo -e "\n=== Pod Status ==="
+          kubectl get pods -l app=livekit-agent -n ${{ env.NAMESPACE }}
+          
+          echo -e "\n=== Service Status ==="
+          kubectl get service livekit-agent -n ${{ env.NAMESPACE }}
+
+      - name: Get service external IP
+        id: service_ip
+        run: |
+          # Wait for LoadBalancer to get external IP
+          for i in {1..30}; do
+            EXTERNAL_IP=$(kubectl get service livekit-agent -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "external_ip=$EXTERNAL_IP" >> $GITHUB_OUTPUT
+              echo "Service external IP: $EXTERNAL_IP"
+              break
+            fi
+            echo "Waiting for external IP ($i/30)..."
+            sleep 10
+          done
+
+      - name: Show recent logs
+        run: |
+          echo "=== Recent Pod Logs ==="
+          POD_NAME=$(kubectl get pod -l app=livekit-agent -n ${{ env.NAMESPACE }} -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
+          if [ -n "$POD_NAME" ]; then
+            kubectl logs --tail=50 $POD_NAME -n ${{ env.NAMESPACE }} || true
+          else
+            echo "No pods found"
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Complete!"
+          echo ""
+          echo "**Cluster:** ${{ env.CLUSTER_NAME }}"
+          echo "**Namespace:** ${{ env.NAMESPACE }}"
+          echo "**Image:** ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}"
+          echo ""
+          if [ -n "${{ steps.service_ip.outputs.external_ip }}" ]; then
+            echo "**External IP:** ${{ steps.service_ip.outputs.external_ip }}"
+            echo "**Service URL:** http://${{ steps.service_ip.outputs.external_ip }}:${{ env.SERVICE_PORT }}"
+          else
+            echo "**External IP:** Still pending..."
+          fi
+          echo ""
+          echo "**Next Steps:**"
+          echo "- Monitor logs: \`kubectl logs -f -l app=livekit-agent -n ${{ env.NAMESPACE }}\`"
+          echo "- Check status: \`kubectl get pods -l app=livekit-agent -n ${{ env.NAMESPACE }}\`"
+          echo "- View service: \`kubectl get service livekit-agent -n ${{ env.NAMESPACE }}\`"
