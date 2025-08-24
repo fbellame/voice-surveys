@@ -129,8 +129,7 @@ jobs:
                 containers:
                   - name: livekit-agent
                     image: ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}
-                    ports:
-                      - containerPort: ${{ env.APP_PORT }}
+                    # No ports needed - pod registers directly to LiveKit cloud
                     envFrom:
                       - secretRef:
                           name: livekit-agent-secrets
@@ -156,31 +155,12 @@ jobs:
                       periodSeconds: 5
           EOF
 
-      - name: Generate service YAML
-        run: |
-          cat > k8s-service.yaml <<EOF
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: livekit-agent
-            namespace: ${{ env.NAMESPACE }}
-          spec:
-            type: LoadBalancer
-            selector:
-              app: livekit-agent
-            ports:
-              - protocol: TCP
-                port: ${{ env.SERVICE_PORT }}
-                targetPort: ${{ env.APP_PORT }}
-          EOF
+      # No service needed - pod registers directly to LiveKit cloud
 
       - name: Deploy to Kubernetes
         run: |
-          # Apply deployment
+          # Apply deployment only (no service needed)
           kubectl apply -f k8s-deployment.yaml
-          
-          # Apply service
-          kubectl apply -f k8s-service.yaml
           
           # Wait for deployment to be ready
           kubectl rollout status deployment/livekit-agent -n ${{ env.NAMESPACE }} --timeout=300s
@@ -193,23 +173,12 @@ jobs:
           echo -e "\n=== Pod Status ==="
           kubectl get pods -l app=livekit-agent -n ${{ env.NAMESPACE }}
           
-          echo -e "\n=== Service Status ==="
-          kubectl get service livekit-agent -n ${{ env.NAMESPACE }}
+          echo -e "\n=== No Service (Pod registers directly to LiveKit cloud) ==="
 
-      - name: Get service external IP
-        id: service_ip
+      - name: Deployment Status Check
         run: |
-          # Wait for LoadBalancer to get external IP
-          for i in {1..30}; do
-            EXTERNAL_IP=$(kubectl get service livekit-agent -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-            if [ -n "$EXTERNAL_IP" ]; then
-              echo "external_ip=$EXTERNAL_IP" >> $GITHUB_OUTPUT
-              echo "Service external IP: $EXTERNAL_IP"
-              break
-            fi
-            echo "Waiting for external IP ($i/30)..."
-            sleep 10
-          done
+          echo "=== Pod Registration Status ==="
+          echo "Pod registers directly to LiveKit cloud - no external IP needed"
 
       - name: Show recent logs
         run: |
@@ -229,14 +198,10 @@ jobs:
           echo "**Namespace:** ${{ env.NAMESPACE }}"
           echo "**Image:** ${{ env.DOCKER_IMAGE }}:${{ github.event.inputs.image_tag }}"
           echo ""
-          if [ -n "${{ steps.service_ip.outputs.external_ip }}" ]; then
-            echo "**External IP:** ${{ steps.service_ip.outputs.external_ip }}"
-            echo "**Service URL:** http://${{ steps.service_ip.outputs.external_ip }}:${{ env.SERVICE_PORT }}"
-          else
-            echo "**External IP:** Still pending..."
-          fi
+          echo "**Connection:** Pod registers directly to LiveKit cloud"
+          echo "**No external IP needed**"
           echo ""
           echo "**Next Steps:**"
           echo "- Monitor logs: \`kubectl logs -f -l app=livekit-agent -n ${{ env.NAMESPACE }}\`"
           echo "- Check status: \`kubectl get pods -l app=livekit-agent -n ${{ env.NAMESPACE }}\`"
-          echo "- View service: \`kubectl get service livekit-agent -n ${{ env.NAMESPACE }}\`"
+          echo "- Check pod logs: \`kubectl logs -f -l app=livekit-agent -n ${{ env.NAMESPACE }}\`"

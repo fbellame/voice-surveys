@@ -1,13 +1,2 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: livekit-agent
-  namespace: default
-spec:
-  type: LoadBalancer
-  selector:
-    app: livekit-agent
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8080
+# No service needed - pod registers directly to LiveKit cloud
+# This file can be deleted or kept for reference
