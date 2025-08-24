@@ -14,4 +14,4 @@ boto3
 supabase
 aiohttp
 pydantic>=2
-datadog
+# datadog
