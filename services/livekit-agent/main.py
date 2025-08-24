@@ -27,14 +27,14 @@ from api_client import (
     cleanup_api_client
 )
 
-from datadog import initialize, statsd
+# from datadog import initialize, statsd
 
-options = {
-    "statsd_host": "dd-agent",  # internal DNS resolves inside Docker network
-    "statsd_port": 8125,
-}
+# options = {
+#     "statsd_host": "dd-agent",  # internal DNS resolves inside Docker network
+#     "statsd_port": 8125,
+# }
 
-initialize(**options)
+# initialize(**options)
 
 
 load_dotenv()
@@ -351,7 +351,7 @@ async def submit_single_answer(userdata: UserData, question_number: str, answer:
 
     if not question_id:
         logger.error(f"Question ID not found for question order {question_number}")
-        statsd.increment("survey.errors", tags=["type:question_id_not_found"])
+        # statsd.increment("survey.errors", tags=["type:question_id_not_found"])
         return False
 
     try:
@@ -366,12 +366,12 @@ async def submit_single_answer(userdata: UserData, question_number: str, answer:
         logger.info(f"Successfully submitted answer for question {question_number} to API")
         
         # Track individual question answers
-        statsd.increment("survey.questions.answered")
+        # statsd.increment("survey.questions.answered")
         
         return True
     except Exception as e:
         logger.error(f"Failed to submit answer for question {question_number} to API: {e}")
-        statsd.increment("survey.errors", tags=["type:api_submission"])
+        # statsd.increment("survey.errors", tags=["type:api_submission"])
         return False
 
 # --- NEW FUNCTION: Finalization with disconnect protection ---
@@ -425,7 +425,7 @@ async def finalize_survey_with_protection(userdata: UserData, ctx: RunContext_T)
     final_submitted_count = len(userdata.submitted_answers)
     if final_submitted_count != total_questions:
         logger.error(f"Finalization failed: {final_submitted_count}/{total_questions} answers submitted")
-        statsd.increment("survey.errors", tags=["type:finalization"])
+        # statsd.increment("survey.errors", tags=["type:finalization"])
         return False
 
     # Mark survey as completed
@@ -433,7 +433,7 @@ async def finalize_survey_with_protection(userdata: UserData, ctx: RunContext_T)
     logger.info(f"Survey marked as completed - all {total_questions} answers submitted to API")
 
     # Count total surveys completed
-    statsd.increment("survey.completed")
+    # statsd.increment("survey.completed")
 
     # Send completion status
     await send_survey_status(ctx, "completed", "Survey successfully completed and saved via API")
@@ -463,16 +463,16 @@ async def set_questionnaire_answer(
         else:
             logger.warning(f"Failed to submit answer for question {question_number} to API - will retry during finalization")
             # Track API submission errors
-            statsd.increment("survey.errors", tags=["type:api_submission"])
+            # statsd.increment("survey.errors", tags=["type:api_submission"])
     except Exception as e:
         # Track general errors
-        statsd.increment("survey.errors", tags=["type:general"])
+        # statsd.increment("survey.errors", tags=["type:general"])
         logger.error(f"Error in set_questionnaire_answer: {e}")
         raise
     finally:
         # Track response latency in ms
         duration_ms = int((time.time() - start_time) * 1000)
-        statsd.histogram("survey.response_time", duration_ms)
+        # statsd.histogram("survey.response_time", duration_ms)
 
     # Find current question text
     current_question_text = None
@@ -657,7 +657,7 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"Participant ID: {participant_id}")
 
     # Increment when a new session starts
-    statsd.increment("livekit.sessions.active")
+    # statsd.increment("livekit.sessions.active")
 
     # Check if survey submission already exists for this room
     existing_submission = await get_existing_submission_api(room_name)
@@ -793,7 +793,7 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info(f"Participant {participant.identity} disconnected")
 
         # Decrement on disconnect
-        statsd.decrement("livekit.sessions.active")
+        # statsd.decrement("livekit.sessions.active")
 
         # If this is the main participant (not the agent), run finalization
         if participant.identity != "agent":
@@ -823,10 +823,10 @@ async def entrypoint(ctx: agents.JobContext):
 
                 except asyncio.TimeoutError:
                     logger.error("Finalization timeout during participant disconnect - data may be lost")
-                    statsd.increment("survey.errors", tags=["type:disconnect_timeout"])
+                    # statsd.increment("survey.errors", tags=["type:disconnect_timeout"])
                 except Exception as e:
                     logger.error(f"Error during participant disconnect finalization: {e}")
-                    statsd.increment("survey.errors", tags=["type:disconnect_finalization"])
+                    # statsd.increment("survey.errors", tags=["type:disconnect_finalization"])
 
             # Create the async task
             import asyncio
@@ -862,7 +862,7 @@ async def entrypoint(ctx: agents.JobContext):
                         await watchdog_survey_completion(watchdog_ctx)
                     except Exception as e:
                         logger.error(f"Error in periodic watchdog: {e}")
-                        statsd.increment("survey.errors", tags=["type:watchdog"])
+                        # statsd.increment("survey.errors", tags=["type:watchdog"])
 
             except asyncio.CancelledError:
                 logger.info("Periodic watchdog cancelled")
@@ -885,7 +885,7 @@ async def entrypoint(ctx: agents.JobContext):
         )
     except Exception as e:
         # Track STT/session errors
-        statsd.increment("survey.errors", tags=["type:stt"])
+        # statsd.increment("survey.errors", tags=["type:stt"])
         logger.error(f"Error starting session: {e}")
         raise
 
@@ -893,7 +893,7 @@ async def entrypoint(ctx: agents.JobContext):
     # Send directly using userdata.room without creating a RunContext
     if userdata.questions:
         # Count surveys started
-        statsd.increment("survey.started")
+        # statsd.increment("survey.started")
         
         first_question = userdata.questions[0]  # Dictionary with question data
 
