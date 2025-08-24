@@ -134,6 +134,28 @@ jobs:
                     envFrom:
                       - secretRef:
                           name: livekit-agent-secrets
+                    env:
+                      # Disable DataDog integration in LiveKit agents library
+                      - name: DD_ENV
+                        value: "disabled"
+                      - name: DD_SERVICE
+                        value: "disabled"
+                      - name: DD_VERSION
+                        value: "disabled"
+                      - name: DD_AGENT_HOST
+                        value: "localhost"
+                      - name: DD_TRACE_AGENT_PORT
+                        value: "0"
+                      - name: DD_PROFILING_ENABLED
+                        value: "false"
+                      - name: DD_LOGS_INJECTION
+                        value: "false"
+                      - name: DD_TRACE_ENABLED
+                        value: "false"
+                      - name: DD_APM_ENABLED
+                        value: "false"
+                      - name: DD_DOGSTATSD_NON_LOCAL_TRAFFIC
+                        value: "false"
                     resources:
                       requests:
                         memory: "256Mi"
