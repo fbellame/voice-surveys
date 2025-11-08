@@ -28,6 +28,18 @@ ALTER SEQUENCE "public"."lesson_id_seq" OWNER TO "postgres";
 ALTER SEQUENCE "public"."lesson_question_id_seq" OWNER TO "postgres";
 ALTER SEQUENCE "public"."lesson_room_mapping_id_seq" OWNER TO "postgres";
 
+-- Create update_updated_at_column function if it doesn't exist
+CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
+
 -- Create lesson table (separate from campaign table)
 CREATE TABLE IF NOT EXISTS "public"."lesson" (
     "id" bigint DEFAULT nextval('"public"."lesson_id_seq"'::regclass) NOT NULL,
