@@ -233,6 +233,26 @@ class SurveyAPIClient:
             logger.error(f"Failed to update submission S3 URL: {e}")
             raise
     
+    async def update_lesson_submission_s3_url(self, submission_id: str, s3_recording_url: str) -> Dict[str, Any]:
+        """Update the S3 recording URL for a lesson submission via API"""
+        try:
+            endpoint = f"/lesson-submissions/{submission_id}"
+            data = {"s3_recording_url": s3_recording_url}
+            
+            response = await self._make_request("PUT", endpoint, data=data)
+            logger.info(f"Updated lesson submission {submission_id} with S3 URL")
+            return response
+        except ClientResponseError as e:
+            if e.status == 404:
+                logger.warning(f"Lesson submission {submission_id} not found in database - cannot update S3 URL")
+                raise
+            else:
+                logger.error(f"Failed to update lesson submission S3 URL: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Failed to update lesson submission S3 URL: {e}")
+            raise
+    
     async def get_existing_submission(self, room_name: str) -> Optional[Dict[str, Any]]:
         """Get existing submission by room name via API"""
         try:
@@ -275,6 +295,143 @@ class SurveyAPIClient:
         except Exception as e:
             logger.error(f"Failed to get existing answers: {e}")
             return []
+    
+    async def get_lesson_details(self, lesson_uri: str, link_token: str) -> Dict[str, Any]:
+        """Get lesson details and questions via API"""
+        try:
+            endpoint = f"/lessons/{lesson_uri}/details"
+            params = {"token": link_token}
+            
+            logger.debug(f"Making API request to: {self.base_url}{endpoint}")
+            logger.debug(f"With params: {params}")
+            
+            response = await self._make_request("GET", endpoint, params=params)
+            logger.debug(f"Raw API response: {response}")
+            logger.info(f"Retrieved lesson details for {lesson_uri}")
+            
+            # Convert the Edge Function response format to match what the main.py expects
+            result = {
+                "lesson": {
+                    "id": response.get("id"),
+                    "name": response.get("name"),
+                    "description": response.get("description"),
+                    "lesson_uri": response.get("lesson_uri"),
+                    "intro_prompt": response.get("intro_prompt", "You are a friendly and encouraging AI voice teacher."),
+                    "purpose_explanation": response.get("purpose_explanation", "Welcome! I'm here to help you learn."),
+                    "greeting": response.get("greeting", "Hello, welcome to your lesson!"),
+                    "closing": response.get("closing", "Thank you for completing the lesson. Great job!"),
+                    "lesson_type": "lesson"  # Always set for lessons
+                },
+                "questions": response.get("questions", [])
+            }
+            
+            logger.debug(f"Processed lesson data: {result}")
+            logger.debug(f"Number of questions in response: {len(result.get('questions', []))}")
+            
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get lesson details: {e}")
+            raise
+    
+    async def get_lesson_details_by_id(self, lesson_id: int) -> Dict[str, Any]:
+        """Get lesson details and questions via API using lesson ID"""
+        try:
+            endpoint = f"/lessons/{lesson_id}/details-by-id"
+            
+            logger.debug(f"Making API request to: {self.base_url}{endpoint}")
+            
+            response = await self._make_request("GET", endpoint)
+            logger.debug(f"Raw API response: {response}")
+            logger.info(f"Retrieved lesson details for ID {lesson_id}")
+            
+            # Convert the Edge Function response format to match what the main.py expects
+            result = {
+                "lesson": {
+                    "id": response.get("id"),
+                    "name": response.get("name"),
+                    "description": response.get("description"),
+                    "lesson_uri": response.get("lesson_uri"),
+                    "intro_prompt": response.get("intro_prompt", "You are a friendly and encouraging AI voice teacher."),
+                    "purpose_explanation": response.get("purpose_explanation", "Welcome! I'm here to help you learn."),
+                    "greeting": response.get("greeting", "Hello, welcome to your lesson!"),
+                    "closing": response.get("closing", "Thank you for completing the lesson. Great job!"),
+                    "lesson_type": "lesson"  # Always set for lessons
+                },
+                "questions": response.get("questions", [])
+            }
+            
+            logger.debug(f"Processed lesson data: {result}")
+            logger.debug(f"Number of questions in response: {len(result.get('questions', []))}")
+            
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get lesson details by ID: {e}")
+            raise
+    
+    async def create_lesson_submission(self, lesson_id: int, link_token: str, link_type: str, 
+                                      room_name: str = None, s3_recording_url: str = None, 
+                                      call_timestamp: str = None) -> Dict[str, Any]:
+        """Create a new lesson submission via API"""
+        try:
+            endpoint = "/lesson-submissions"
+            data = {
+                "lesson_id": lesson_id,
+                "link_token": link_token,
+                "link_type": link_type
+            }
+            
+            # Add optional fields
+            if room_name:
+                data["room_name"] = room_name
+            if s3_recording_url:
+                data["s3_recording_url"] = s3_recording_url
+            if call_timestamp:
+                data["call_timestamp"] = call_timestamp
+            
+            response = await self._make_request("POST", endpoint, data=data)
+            logger.info(f"Created lesson submission with ID: {response.get('submission_id')}")
+            return response
+        except Exception as e:
+            logger.error(f"Failed to create lesson submission: {e}")
+            raise
+    
+    async def submit_lesson_answers(self, submission_id: str, answers: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Submit answers for a lesson submission via API"""
+        try:
+            endpoint = f"/lesson-submissions/{submission_id}/answers"
+            data = {"answers": answers}
+            
+            response = await self._make_request("POST", endpoint, data=data)
+            logger.info(f"Submitted {len(answers)} answers for lesson submission {submission_id}")
+            return response
+        except ClientResponseError as e:
+            if e.status == 404:
+                logger.warning(f"Lesson submission {submission_id} not found in database - cannot submit answers")
+                raise
+            else:
+                logger.error(f"Failed to submit lesson answers: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Failed to submit lesson answers: {e}")
+            raise
+    
+    async def get_existing_lesson_submission(self, room_name: str) -> Optional[Dict[str, Any]]:
+        """Get existing lesson submission by room name via API"""
+        try:
+            endpoint = "/lesson-submissions"
+            params = {"room_name": room_name}
+            
+            response = await self._make_request("GET", endpoint, params=params)
+            
+            if response.get("submissions") and len(response["submissions"]) > 0:
+                logger.info(f"Found existing lesson submission for room {room_name}")
+                return response["submissions"][0]
+            else:
+                logger.info(f"No existing lesson submission found for room {room_name}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get existing lesson submission: {e}")
+            return None
 
 # Global API client instance
 api_client = SurveyAPIClient()
@@ -316,10 +473,13 @@ async def record_answer_api(submission_id: str, question_id: int, answer_text: s
         logger.error(f"Failed to record answer: {e}")
         return False
 
-async def update_submission_s3_url_api(submission_id: str, s3_recording_url: str) -> bool:
+async def update_submission_s3_url_api(submission_id: str, s3_recording_url: str, is_lesson: bool = False) -> bool:
     """Update submission S3 URL via API"""
     try:
-        await api_client.update_submission_s3_url(submission_id, s3_recording_url)
+        if is_lesson:
+            await api_client.update_lesson_submission_s3_url(submission_id, s3_recording_url)
+        else:
+            await api_client.update_submission_s3_url(submission_id, s3_recording_url)
         return True
     except Exception as e:
         logger.error(f"Failed to update submission S3 URL: {e}")
@@ -332,6 +492,82 @@ async def get_existing_submission_api(room_name: str) -> Optional[Dict[str, Any]
 async def get_existing_answers_api(submission_id: str) -> List[int]:
     """Get existing answer question IDs via API"""
     return await api_client.get_existing_answers(submission_id)
+
+async def get_lesson_by_uri_and_token(lesson_uri: str, link_token: str) -> Dict[str, Any]:
+    """Get lesson details by URI and token"""
+    return await api_client.get_lesson_details(lesson_uri, link_token)
+
+async def get_lesson_by_id(lesson_id: int) -> Dict[str, Any]:
+    """Get lesson details by ID"""
+    return await api_client.get_lesson_details_by_id(lesson_id)
+
+async def record_lesson_submission_api(lesson_id: int, link_token: str, link_type: str,
+                                     room_name: str = None, s3_recording_url: str = None,
+                                     call_timestamp: str = None) -> str:
+    """Record a lesson submission via API"""
+    response = await api_client.create_lesson_submission(
+        lesson_id=lesson_id,
+        link_token=link_token,
+        link_type=link_type,
+        room_name=room_name,
+        s3_recording_url=s3_recording_url,
+        call_timestamp=call_timestamp
+    )
+    return response.get("submission_id")
+
+async def get_existing_lesson_submission_api(room_name: str) -> Optional[Dict[str, Any]]:
+    """Get existing lesson submission by room name via API"""
+    return await api_client.get_existing_lesson_submission(room_name)
+
+async def submit_quiz_answer_api(submission_id: str, question_id: int, answer_text: str, 
+                                is_correct: bool, points_earned: int, feedback: str = None,
+                                is_lesson: bool = False) -> bool:
+    """Submit a quiz answer with correctness and points via API"""
+    answer_data = {
+        "question_id": question_id,
+        "answer_text": answer_text,
+        "is_correct": is_correct,
+        "points_earned": points_earned
+    }
+    if feedback:
+        answer_data["feedback"] = feedback
+    
+    try:
+        if is_lesson:
+            await api_client.submit_lesson_answers(submission_id, [answer_data])
+        else:
+            await api_client.submit_answers(submission_id, [answer_data])
+        return True
+    except Exception as e:
+        logger.error(f"Failed to submit quiz answer: {e}")
+        return False
+
+async def create_lesson_performance_api(submission_id: str, lesson_id: int, 
+                                       total_questions: int, correct_answers: int,
+                                       total_points: int, points_earned: int,
+                                       score_percentage: float, 
+                                       completion_time_seconds: int = None) -> bool:
+    """Create or update lesson performance record via API"""
+    try:
+        endpoint = "/lesson-performance"
+        data = {
+            "submission_id": submission_id,
+            "lesson_id": lesson_id,
+            "total_questions": total_questions,
+            "correct_answers": correct_answers,
+            "total_points": total_points,
+            "points_earned": points_earned,
+            "score_percentage": score_percentage
+        }
+        if completion_time_seconds:
+            data["completion_time_seconds"] = completion_time_seconds
+        
+        await api_client._make_request("POST", endpoint, data=data)
+        logger.info(f"Created lesson performance record for submission {submission_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to create lesson performance: {e}")
+        return False
 
 # Cleanup function
 async def cleanup_api_client():

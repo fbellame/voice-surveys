@@ -21,4 +21,12 @@ export interface SurveyProgress {
   completionPercentage: number;
   status: 'started' | 'in_progress' | 'completed' | 'closing' | 'error';
   statusMessage: string;
+  // Lesson/Quiz specific fields
+  isLessonMode?: boolean;
+  isQuizQuestion?: boolean;
+  lastAnswerCorrect?: boolean;
+  pointsEarned?: number;
+  totalPoints?: number;
+  correctAnswers?: number;
+  encouragementMessage?: string;
 }

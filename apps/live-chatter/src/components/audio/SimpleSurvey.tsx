@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mic, MicOff, User, Bot, Check, Link, Mail } from 'lucide-react';
+import { Mic, MicOff, User, Bot, Check, Link, Mail, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -586,7 +586,7 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
               variant="audio"
               size="lg"
             >
-              {isConnecting ? "Starting..." : "Start Survey"}
+              {isConnecting ? "Starting..." : (surveyProgress.isLessonMode ? "Start Lesson" : "Start Survey")}
             </Button>
           </Card>
         </div>
@@ -616,7 +616,7 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
             variant="audio"
             size="lg"
           >
-            {isConnecting ? "Starting..." : "Start Survey"}
+            {isConnecting ? "Starting..." : (surveyProgress.isLessonMode ? "Start Lesson" : "Start Survey")}
           </Button>
         </Card>
       </div>
@@ -628,21 +628,85 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
       <Card className="w-full max-w-2xl p-8 space-y-8">
         <div className="text-center space-y-2">
           <h2 className="text-2xl font-bold">
-            {campaign?.name || "Survey"} in Progress
+            {campaign?.name || (surveyProgress.isLessonMode ? "Lesson" : "Survey")} in Progress
           </h2>
           <p className="text-muted-foreground">
-            Please wait while the voice assistant speaks...
+            {surveyProgress.isLessonMode 
+              ? "Please wait while your AI teacher speaks..." 
+              : "Please wait while the voice assistant speaks..."}
           </p>
         </div>
 
-        {/* Survey Progress */}
+        {/* Survey/Lesson Progress */}
         {surveyProgress.totalQuestions > 0 && (
           <div className="space-y-4">
             <div className="text-center">
-              <h3 className="text-lg font-semibold mb-2">Survey Progress</h3>
+              <h3 className="text-lg font-semibold mb-2">
+                {surveyProgress.isLessonMode ? "Lesson Progress" : "Survey Progress"}
+              </h3>
               <p className="text-sm text-muted-foreground">
                 {getProgressStats().completed} of {getProgressStats().total} questions answered ({getProgressStats().percentage}%)
               </p>
+              
+              {/* Lesson Mode Performance */}
+              {surveyProgress.isLessonMode && surveyProgress.totalPoints > 0 && (
+                <div className="mt-4 p-4 bg-accent/50 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Score:</span>
+                    <span className="font-semibold">
+                      {surveyProgress.pointsEarned}/{surveyProgress.totalPoints} points
+                      {surveyProgress.totalPoints > 0 && (
+                        <span className="ml-2">
+                          ({Math.round((surveyProgress.pointsEarned / surveyProgress.totalPoints) * 100)}%)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Correct Answers:</span>
+                    <span className="font-semibold">
+                      {surveyProgress.correctAnswers}/{surveyProgress.totalQuestions}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Quiz Question Indicator */}
+              {surveyProgress.isLessonMode && surveyProgress.isQuizQuestion && (
+                <div className="mt-2">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary">
+                    Quiz Question
+                  </span>
+                </div>
+              )}
+              
+              {/* Last Answer Feedback (Lesson Mode) */}
+              {surveyProgress.isLessonMode && surveyProgress.lastAnswerCorrect !== undefined && (
+                <div className={`mt-4 p-4 rounded-lg ${
+                  surveyProgress.lastAnswerCorrect 
+                    ? 'bg-green-500/20 border border-green-500/50' 
+                    : 'bg-orange-500/20 border border-orange-500/50'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {surveyProgress.lastAnswerCorrect ? (
+                      <>
+                        <Check className="h-5 w-5 text-green-600" />
+                        <span className="font-semibold text-green-700">Correct!</span>
+                      </>
+                    ) : (
+                      <>
+                        <X className="h-5 w-5 text-orange-600" />
+                        <span className="font-semibold text-orange-700">Not quite right</span>
+                      </>
+                    )}
+                  </div>
+                  {surveyProgress.encouragementMessage && (
+                    <p className="text-sm text-muted-foreground">
+                      {surveyProgress.encouragementMessage}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             
             {/* Current Question */}
@@ -768,7 +832,7 @@ export function SimpleSurvey({ campaign, invitation, campaignLink, onComplete }:
             disabled={!isConnected}
             className="transition-all duration-300 hover:scale-105"
           >
-            End Survey
+            {surveyProgress.isLessonMode ? "End Lesson" : "End Survey"}
           </Button>
         </div>
 

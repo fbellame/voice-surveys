@@ -13,77 +13,69 @@ import { Download, Filter, Search, Play, ChevronDown, ChevronRight, ExternalLink
 import { format } from "date-fns";
 import { displayQuestionWithContext } from "@/lib/questionUtils";
 
-interface UserProfile {
+interface StudentProfile {
   id: string;
-  campaign_id: number;
   full_name: string | null;
   email: string | null;
-  geography: string | null;
-  occupation: string | null;
   phone_number: string | null;
-  link_token: string;
-  link_type: string;
-  invitation_token: string | null;
   created_at: string;
   updated_at: string;
 }
 
-interface SurveyResponse {
+interface LessonResponse {
   id: string;
   phone_number: string | null;
   room_name: string;
   call_timestamp: string;
   s3_recording_url?: string;
-  user_profile?: UserProfile;
-  campaign: {
+  student_profile?: StudentProfile;
+  lesson: {
     id: number;
     name: string;
-    campaign_type: string;
   };
   answers: Answer[];
 }
 
 interface Answer {
-  id: number;
+  id: string;
   answer_text: string;
   answered_at: string;
-  question_id: number;
+  lesson_question_id: number;
   question: {
     question_text: string;
     question_order: number;
   };
 }
 
-interface Campaign {
+interface Lesson {
   id: number;
   name: string;
-  campaign_type: string;
 }
 
-interface SurveySubmission {
+interface LessonSubmission {
   id: string;
-  campaign_id: number;
-  user_profile_id: string;
+  lesson_id: number;
+  student_profile_id: string | null;
   room_name: string;
   call_timestamp: string;
   s3_recording_url?: string;
-  user_profile?: UserProfile;
+  student_profile?: StudentProfile;
 }
 
 export default function Answers() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const [surveyResponses, setSurveyResponses] = useState<SurveyResponse[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [lessonResponses, setLessonResponses] = useState<LessonResponse[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCampaign, setSelectedCampaign] = useState<string>("all");
+  const [selectedLesson, setSelectedLesson] = useState<string>("all");
   const [timeFilter, setTimeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchData();
-  }, [selectedCampaign, timeFilter, user?.id]);
+  }, [selectedLesson, timeFilter, user?.id]);
 
   const fetchData = async () => {
     if (!user?.id) {
@@ -93,46 +85,40 @@ export default function Answers() {
     
     setLoading(true);
     try {
-      // Fetch campaigns
-      const { data: campaignsData, error: campaignsError } = await supabase
-        .from('campaign')
-        .select('id, name, campaign_type')
+      // Fetch lessons
+      const { data: lessonsData, error: lessonsError } = await supabase
+        .from('lesson')
+        .select('id, name')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (campaignsError) throw campaignsError;
-      setCampaigns(campaignsData || []);
+      if (lessonsError) throw lessonsError;
+      setLessons(lessonsData || []);
 
-      // Fetch survey submissions with user profiles
+      // Fetch lesson submissions with student profiles
       let submissionsQuery = supabase
-        .from('survey_submissions')
+        .from('lesson_submissions')
         .select(`
           id,
-          campaign_id,
-          user_profile_id,
+          lesson_id,
+          student_profile_id,
           room_name,
           call_timestamp,
           s3_recording_url,
-          user_profile:user_profiles (
+          student_profile:student_profiles (
             id,
-            campaign_id,
             full_name,
             email,
-            geography,
-            occupation,
             phone_number,
-            link_token,
-            link_type,
-            invitation_token,
             created_at,
             updated_at
           )
         `)
         .order('call_timestamp', { ascending: false });
 
-      // Apply campaign filter
-      if (selectedCampaign !== "all") {
-        submissionsQuery = submissionsQuery.eq('campaign_id', parseInt(selectedCampaign));
+      // Apply lesson filter
+      if (selectedLesson !== "all") {
+        submissionsQuery = submissionsQuery.eq('lesson_id', parseInt(selectedLesson));
       }
 
       // Apply time filter
@@ -162,53 +148,52 @@ export default function Answers() {
       if (submissionsError) throw submissionsError;
 
       // Fetch all answers with questions for these submissions
-      const submissionIds = submissionsData?.map((s: SurveySubmission) => s.id) || [];
+      const submissionIds = submissionsData?.map((s: LessonSubmission) => s.id) || [];
       
       let answersData: Answer[] = [];
       if (submissionIds.length > 0) {
         const { data: fetchedAnswers, error: answersError } = await supabase
-          .from('answer')
+          .from('lesson_answer')
           .select(`
             id,
             answer_text,
             answered_at,
-            question_id,
-            survey_submission_id,
-            question:question_id (
+            lesson_question_id,
+            lesson_submission_id,
+            question:lesson_question_id (
               question_text,
               question_order
             )
           `)
-          .in('survey_submission_id', submissionIds);
+          .in('lesson_submission_id', submissionIds);
 
         if (answersError) throw answersError;
         answersData = fetchedAnswers || [];
       }
 
       // Transform data to match our interface
-      const transformedData: SurveyResponse[] = submissionsData?.map((submission: SurveySubmission) => {
-        const campaign = campaignsData?.find(c => c.id === submission.campaign_id);
+      const transformedData: LessonResponse[] = submissionsData?.map((submission: LessonSubmission) => {
+        const lesson = lessonsData?.find(l => l.id === submission.lesson_id);
         const submissionAnswers = answersData
-          .filter(a => a.survey_submission_id === submission.id)
+          .filter(a => a.lesson_submission_id === submission.id)
           .sort((a, b) => a.question.question_order - b.question.question_order);
 
         return {
           id: submission.id,
-          phone_number: submission.user_profile?.phone_number || null,
-          room_name: submission.room_name,
+          phone_number: submission.student_profile?.phone_number || null,
+          room_name: submission.room_name || '',
           call_timestamp: submission.call_timestamp,
           s3_recording_url: submission.s3_recording_url,
-          user_profile: submission.user_profile,
-          campaign: {
-            id: campaign?.id || submission.campaign_id,
-            name: campaign?.name || 'Unknown Campaign',
-            campaign_type: campaign?.campaign_type || 'unknown'
+          student_profile: submission.student_profile,
+          lesson: {
+            id: lesson?.id || submission.lesson_id,
+            name: lesson?.name || 'Unknown Lesson'
           },
           answers: submissionAnswers
         };
       }) || [];
 
-      setSurveyResponses(transformedData);
+      setLessonResponses(transformedData);
 
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -222,12 +207,12 @@ export default function Answers() {
     }
   };
 
-  const filteredResponses = surveyResponses.filter(response => {
+  const filteredResponses = lessonResponses.filter(response => {
     if (!searchQuery) return true;
     
     const searchLower = searchQuery.toLowerCase();
     return (
-      response.campaign.name.toLowerCase().includes(searchLower) ||
+      response.lesson.name.toLowerCase().includes(searchLower) ||
       (response.phone_number && response.phone_number.includes(searchQuery)) ||
       response.room_name.toLowerCase().includes(searchLower) ||
       response.answers.some(answer => 
@@ -286,8 +271,7 @@ export default function Answers() {
   const exportToCSV = () => {
     const headers = [
       'Response ID',
-      'Campaign',
-      'Type',
+      'Lesson',
       'Date',
       'Phone',
       'Room',
@@ -301,8 +285,7 @@ export default function Answers() {
       if (response.answers.length === 0) {
         csvData.push([
           response.id.toString(),
-          response.campaign.name,
-            response.campaign.campaign_type === 'web_survey' ? 'Web Survey' : 'Phone Survey',
+          response.lesson.name,
           format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
           response.phone_number || '-',
           response.room_name,
@@ -316,8 +299,7 @@ export default function Answers() {
           const questionWithContext = context ? `${question} (Context: ${context})` : question;
           csvData.push([
             response.id.toString(),
-            response.campaign.name,
-            response.campaign.campaign_type === 'web_survey' ? 'Web Survey' : 'Phone Survey',
+            response.lesson.name,
             format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm'),
             response.phone_number || '-',
             response.room_name,
@@ -336,20 +318,19 @@ export default function Answers() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `survey_responses_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `lesson_responses_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
   };
 
   const exportToJSON = () => {
     const jsonData = filteredResponses.map(response => ({
       response_id: response.id,
-      campaign: response.campaign.name,
-      campaign_type: response.campaign.campaign_type,
+      lesson: response.lesson.name,
       timestamp: response.call_timestamp,
       phone_number: response.phone_number,
       room_name: response.room_name,
       s3_recording_url: response.s3_recording_url,
-      user_profile: response.user_profile,
+      student_profile: response.student_profile,
       answers: response.answers.map(answer => ({
         question: answer.question.question_text,
         answer: answer.answer_text,
@@ -361,7 +342,7 @@ export default function Answers() {
     const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `survey_responses_${format(new Date(), 'yyyy-MM-dd')}.json`;
+    link.download = `lesson_responses_${format(new Date(), 'yyyy-MM-dd')}.json`;
     link.click();
   };
 
@@ -370,9 +351,9 @@ export default function Answers() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Survey Responses</h1>
+          <h1 className="text-3xl font-bold text-foreground">Lesson Responses</h1>
           <p className="text-muted-foreground mt-2">
-            Manage and analyze survey responses
+            Manage and analyze lesson responses
           </p>
         </div>
 
@@ -390,16 +371,16 @@ export default function Answers() {
           <CardContent>
             <div className="flex flex-wrap gap-4 items-end">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Campaign</label>
-                <Select value={selectedCampaign} onValueChange={setSelectedCampaign}>
+                <label className="text-sm font-medium">Lesson</label>
+                <Select value={selectedLesson} onValueChange={setSelectedLesson}>
                   <SelectTrigger className="w-48">
-                    <SelectValue placeholder="All campaigns" />
+                    <SelectValue placeholder="All lessons" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All campaigns</SelectItem>
-                    {campaigns.map(campaign => (
-                      <SelectItem key={campaign.id} value={campaign.id.toString()}>
-                        {campaign.name}
+                    <SelectItem value="all">All lessons</SelectItem>
+                    {lessons.map(lesson => (
+                      <SelectItem key={lesson.id} value={lesson.id.toString()}>
+                        {lesson.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -462,7 +443,7 @@ export default function Answers() {
         <Card className="bg-gradient-card shadow-card border-0">
           <CardHeader>
             <CardTitle>
-              Survey Responses ({filteredResponses.length})
+              Lesson Responses ({filteredResponses.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -495,14 +476,11 @@ export default function Answers() {
                           </Button>
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="font-medium">{response.campaign.name}</h3>
-                              <Badge variant={response.campaign.campaign_type === 'web_survey' ? 'default' : 'secondary'}>
-                                {response.campaign.campaign_type === 'web_survey' ? 'Web' : 'Phone'}
-                              </Badge>
+                              <h3 className="font-medium">{response.lesson.name}</h3>
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {format(new Date(response.call_timestamp), 'dd/MM/yyyy HH:mm')} • 
-                              {response.campaign.campaign_type === 'phone_survey' ? ` ${response.phone_number || 'N/A'}` : ` ${response.room_name}`}
+                              {response.phone_number ? ` ${response.phone_number}` : ` ${response.room_name}`}
                             </p>
                           </div>
                         </div>

@@ -14,9 +14,10 @@ class UserData:
     recording_id: Optional[str] = None
     s3_recording_url: Optional[str] = None
     
-    # Survey data
+    # Lesson data
     questions: list = field(default_factory=list)
-    campaign: dict = field(default_factory=dict)
+    lesson: dict = field(default_factory=dict)
+    campaign: dict = field(default_factory=dict)  # Kept for backward compatibility, maps to lesson
     submission_id: Optional[str] = None
     call_id: Optional[str] = None
     
@@ -24,6 +25,14 @@ class UserData:
     submitted_answers: set[str] = field(default_factory=set)  # Track which answers have been submitted
     survey_completed: bool = False  # Track if survey was marked as completed
     finalization_attempted: bool = False  # Track if finalization was attempted
+    
+    # Quiz/Lesson tracking - NEW FIELDS FOR LESSON MODE
+    is_lesson_mode: bool = False  # Whether this is a lesson (quiz) or survey
+    quiz_answers: dict[str, dict] = field(default_factory=dict)  # Track quiz answers with correctness: {q_num: {"answer": str, "is_correct": bool, "points": int}}
+    total_points_earned: int = 0  # Total points earned in quiz
+    total_points_possible: int = 0  # Total points possible
+    correct_count: int = 0  # Number of correct answers
+    performance_feedback: list[str] = field(default_factory=list)  # Encouragement messages given
     
     # LiveKit components
     agents: dict[str, Agent] = field(default_factory=dict)

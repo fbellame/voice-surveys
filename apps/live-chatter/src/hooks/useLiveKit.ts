@@ -21,7 +21,13 @@ export function useLiveKit() {
     lastAnswer: null,
     completionPercentage: 0,
     status: 'started',
-    statusMessage: ''
+    statusMessage: '',
+    isLessonMode: false,
+    isQuizQuestion: false,
+    lastAnswerCorrect: undefined,
+    pointsEarned: 0,
+    totalPoints: 0,
+    correctAnswers: 0
   });
   
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
@@ -56,7 +62,13 @@ export function useLiveKit() {
             totalQuestions: data.total_questions,
             answeredQuestions: data.answered_questions,
             lastAnswer: data.last_answer,
-            completionPercentage: data.completion_percentage || 0
+            completionPercentage: data.completion_percentage || 0,
+            isLessonMode: data.is_lesson_mode || prev.isLessonMode || false,
+            isQuizQuestion: data.is_quiz_question || false,
+            lastAnswerCorrect: data.last_answer_correct,
+            pointsEarned: data.points_earned ?? prev.pointsEarned ?? 0,
+            totalPoints: data.total_points ?? prev.totalPoints ?? 0,
+            correctAnswers: data.correct_answers ?? prev.correctAnswers ?? 0
           }));
           break;
           
@@ -74,7 +86,19 @@ export function useLiveKit() {
           setSurveyProgress(prev => ({
             ...prev,
             status: data.status,
-            statusMessage: data.message || ''
+            statusMessage: data.message || '',
+            encouragementMessage: data.encouragement_message || prev.encouragementMessage
+          }));
+          break;
+          
+        case 'quiz_feedback':
+          // Lesson-specific feedback for quiz answers
+          setSurveyProgress(prev => ({
+            ...prev,
+            lastAnswerCorrect: data.is_correct,
+            pointsEarned: data.points_earned ?? prev.pointsEarned ?? 0,
+            correctAnswers: data.correct_answers ?? prev.correctAnswers ?? 0,
+            encouragementMessage: data.feedback || data.message
           }));
           break;
           
@@ -96,7 +120,13 @@ export function useLiveKit() {
       lastAnswer: null,
       completionPercentage: 0,
       status: 'started',
-      statusMessage: ''
+      statusMessage: '',
+      isLessonMode: false,
+      isQuizQuestion: false,
+      lastAnswerCorrect: undefined,
+      pointsEarned: 0,
+      totalPoints: 0,
+      correctAnswers: 0
     });
     setTranscript([]);
     setIsReceivingData(false);

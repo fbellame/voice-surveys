@@ -22,9 +22,10 @@ from recording import start_s3_recording
 
 # --- API integration imports ---
 from api_client import (
-    get_campaign_by_uri_and_token, get_campaign_by_id, record_survey_submission_api, record_answer_api,
-    update_submission_s3_url_api, get_existing_submission_api, get_existing_answers_api,
-    cleanup_api_client
+    update_submission_s3_url_api, get_existing_answers_api,
+    cleanup_api_client, submit_quiz_answer_api, create_lesson_performance_api,
+    get_lesson_by_uri_and_token, get_lesson_by_id, record_lesson_submission_api,
+    get_existing_lesson_submission_api
 )
 
 # from datadog import initialize, statsd
@@ -127,14 +128,14 @@ RunContext_T = RunContext[UserData]
 
 # API-based operations - all database calls now go through the API client
 
-def build_dynamic_prompt_from_campaign_data(campaign_data):
-    """Build dynamic prompt from campaign data received from API."""
-    logger.debug(f"Building dynamic prompt from campaign data: {campaign_data}")
+def build_dynamic_prompt_from_lesson_data(lesson_data):
+    """Build dynamic prompt from lesson data received from API."""
+    logger.debug(f"Building dynamic prompt from lesson data: {lesson_data}")
 
-    campaign = campaign_data.get("campaign", {})
-    questions = campaign_data.get("questions", [])
+    lesson = lesson_data.get("lesson", {})
+    questions = lesson_data.get("questions", [])
 
-    logger.debug(f"Campaign data: {campaign}")
+    logger.debug(f"Lesson data: {lesson}")
     logger.debug(f"Questions data: {questions}")
     logger.debug(f"Number of questions: {len(questions)}")
 
@@ -144,11 +145,21 @@ def build_dynamic_prompt_from_campaign_data(campaign_data):
         qid = question.get("id")
         qtext = question.get("question_text")
         qorder = question.get("question_order")
-        logger.debug(f"Processing question {i+1}: id={qid}, order={qorder}, text='{qtext}'")
-        questions_section += f"\n{qorder}) Question {qorder}:\n   \"{qtext}\"\n"
+        is_quiz = question.get("is_quiz_question", False)
+        correct_answer = question.get("correct_answer")
+        points = question.get("points", 1)
+        logger.debug(f"Processing question {i+1}: id={qid}, order={qorder}, text='{qtext}', is_quiz={is_quiz}")
+        
+        if is_quiz and correct_answer:
+            questions_section += f"\n{qorder}) Question {qorder} (Quiz - {points} point{'s' if points != 1 else ''}):\n   \"{qtext}\"\n   Correct answer: \"{correct_answer}\"\n"
+        else:
+            questions_section += f"\n{qorder}) Question {qorder}:\n   \"{qtext}\"\n"
 
+    purpose_explanation = lesson.get('purpose_explanation', 'Welcome! I am here to help you learn through an interactive quiz.')
+    intro_prompt = lesson.get('intro_prompt', 'You are a friendly and encouraging AI voice teacher helping a student learn through interactive quizzes.')
+    
     prompt = f"""
-{campaign.get('intro_prompt', '')}
+{intro_prompt}
 Current date and time: {current_time}
 
 LANGUAGE POLICY
@@ -156,30 +167,46 @@ Detect the participant's first reply.
 Do not switch languages once the conversation has started, even if the participant does.
 Never use special characters such as %, $, #, or *.
 
-SURVEY FLOW (ask only one question at a time)
+LESSON MODE - QUIZ INSTRUCTIONS
+You are a supportive and encouraging teacher. Your role is to:
+1. Help students learn through interactive quizzes
+2. Evaluate answers and provide positive, constructive feedback
+3. Be encouraging and supportive, even when answers are incorrect
+4. Celebrate correct answers with enthusiasm
+5. Use encouraging phrases like "Great job!", "Well done!", "You're doing great!", "Keep it up!"
 
-1) Briefly explain purpose:
-   \"{campaign.get('purpose_explanation', '')}\"
+LESSON FLOW (ask only one question at a time)
+
+1) Welcome and explain purpose:
+   {purpose_explanation}
 {questions_section}
 {len(questions) + 3}) Completion check:
    After the recap, call check_survey_complete to ensure all questions were answered.
 
 {len(questions) + 4}) Closing:
-   Survey will automatically end when check_survey_complete confirms all questions are answered.
+   Lesson will automatically end when check_survey_complete confirms all questions are answered.
+   Provide a summary of performance and encouraging closing remarks.
+
+QUIZ EVALUATION
+- For each quiz question, use evaluate_quiz_answer to check if the answer is correct
+- Always provide positive feedback, even for incorrect answers
+- For correct answers: Celebrate enthusiastically and explain why it's correct
+- For incorrect answers: Be supportive, provide hints, and encourage them to try again if appropriate
+- Track performance and provide encouragement throughout
 
 DATA PROTECTION
 - Each answer is automatically saved to the database as soon as it's captured.
+- Quiz answers are evaluated and scored immediately.
 - If you detect any issues with data submission, call watchdog_survey_completion to retry.
-- The watchdog function can retry failed submissions and ensure all data is saved.
 
 GENERAL GUIDELINES
 Ask only one question at a time.
-Respond in clear, complete sentences.
+Respond in clear, complete sentences with enthusiasm and encouragement.
+Be patient and supportive - learning takes time.
 If the participant provides unexpected information, politely steer them back to the current question.
-Do not provide medical or technical advice; clarify that your role is limited to conducting this survey.
-If the participant asks for information outside your scope, respond succinctly that you can only administer the survey.
+Always maintain a positive, encouraging tone.
 """
-    return prompt, campaign, questions
+    return prompt, lesson, questions
 
 # --- New functions for real-time progress tracking ---
 async def send_progress_update(ctx: RunContext_T, current_question: str = None, last_answer: str = None, current_question_text: str = None):
@@ -252,18 +279,22 @@ async def send_survey_status(ctx: RunContext_T, status: str, message: str = ""):
 
 
 class MainAgent(Agent):
-    def __init__(self, campaign_data) -> None:
-        MAIN_PROMPT, self.campaign, self.questions = build_dynamic_prompt_from_campaign_data(campaign_data)
-        logger.info(f"MainAgent initialized for campaign '{self.campaign.get('name', 'Unknown')}' with dynamic prompt: %s", MAIN_PROMPT)
+    def __init__(self, lesson_data) -> None:
+        MAIN_PROMPT, self.lesson, self.questions = build_dynamic_prompt_from_lesson_data(lesson_data)
+        logger.info(f"MainAgent initialized for lesson '{self.lesson.get('name', 'Unknown')}' with dynamic prompt: %s", MAIN_PROMPT)
         self.conversation_log = []  # Track conversation for transcript
+        
+        # Include quiz evaluation tool for lessons
+        tools = [set_questionnaire_answer, check_survey_complete, watchdog_survey_completion, evaluate_quiz_answer]
+        
         super().__init__(
             instructions=MAIN_PROMPT,
-            tools=[set_questionnaire_answer, check_survey_complete, watchdog_survey_completion],
+            tools=tools,
             tts=openai.TTS(voice="nova"),
         )
 
     async def on_enter(self) -> None:
-        greeting = self.campaign["greeting"] or "Hello, welcome to our survey."
+        greeting = self.lesson.get("greeting") or "Hello, welcome to your lesson!"
         await self.session.say(greeting, allow_interruptions=False)
 
         # Note: We'll send initial progress updates after session is fully initialized
@@ -428,20 +459,196 @@ async def finalize_survey_with_protection(userdata: UserData, ctx: RunContext_T)
         # statsd.increment("survey.errors", tags=["type:finalization"])
         return False
 
-    # Mark survey as completed
+    # Mark lesson as completed
     userdata.survey_completed = True
-    logger.info(f"Survey marked as completed - all {total_questions} answers submitted to API")
+    logger.info(f"Lesson marked as completed - all {total_questions} answers submitted to API")
+
+    # Create lesson performance record
+    if userdata.submission_id != "fallback-submission-id":
+        try:
+            # Calculate performance metrics
+            quiz_questions = [q for q in userdata.questions if q.get("is_quiz_question", False)]
+            total_quiz_questions = len(quiz_questions)
+            correct_answers = userdata.correct_count
+            total_points = userdata.total_points_possible
+            points_earned = userdata.total_points_earned
+            
+            # Calculate score percentage
+            score_percentage = 0.0
+            if total_points > 0:
+                score_percentage = (points_earned / total_points) * 100.0
+            
+            # Create lesson performance record
+            lesson_id = userdata.lesson.get("id")
+            if lesson_id:
+                performance_success = await create_lesson_performance_api(
+                    submission_id=userdata.submission_id,
+                    lesson_id=lesson_id,
+                    total_questions=total_quiz_questions if total_quiz_questions > 0 else total_questions,
+                    correct_answers=correct_answers,
+                    total_points=total_points if total_points > 0 else total_questions,
+                    points_earned=points_earned,
+                    score_percentage=score_percentage
+                )
+                if performance_success:
+                    logger.info(f"Lesson performance record created: {correct_answers}/{total_quiz_questions} correct, {points_earned}/{total_points} points, {score_percentage:.1f}%")
+                else:
+                    logger.warning("Failed to create lesson performance record")
+        except Exception as e:
+            logger.error(f"Error creating lesson performance record: {e}")
 
     # Count total surveys completed
     # statsd.increment("survey.completed")
 
     # Send completion status
-    await send_survey_status(ctx, "completed", "Survey successfully completed and saved via API")
+    await send_survey_status(ctx, "completed", "Lesson successfully completed and saved via API")
 
     # Send final progress update
     await send_progress_update(ctx, current_question=None, last_answer=None)
 
     return True
+
+# --- Quiz evaluation helper function ---
+def evaluate_answer_correctness(student_answer: str, correct_answer: str) -> bool:
+    """Evaluate if a student's answer is correct (fuzzy matching for natural language)"""
+    if not correct_answer:
+        return False
+    
+    # Normalize both answers for comparison
+    student_normalized = student_answer.lower().strip()
+    correct_normalized = correct_answer.lower().strip()
+    
+    # Exact match
+    if student_normalized == correct_normalized:
+        return True
+    
+    # Check if student answer contains the correct answer (or vice versa)
+    if correct_normalized in student_normalized or student_normalized in correct_normalized:
+        return True
+    
+    # For numeric answers, try to compare as numbers
+    try:
+        student_num = float(student_normalized)
+        correct_num = float(correct_normalized)
+        if abs(student_num - correct_num) < 0.01:  # Allow small floating point differences
+            return True
+    except ValueError:
+        pass
+    
+    # For now, return False if no match found
+    # In production, you might want to use an LLM to evaluate semantic similarity
+    return False
+
+# --- Quiz answer submission with evaluation ---
+async def submit_quiz_answer(userdata: UserData, question_number: str, answer: str) -> dict:
+    """Submit a quiz answer with evaluation and scoring"""
+    if userdata.submission_id == "fallback-submission-id":
+        logger.warning(f"Cannot submit quiz answer for question {question_number} - using fallback submission ID")
+        return {"success": False, "is_correct": False, "points": 0}
+    
+    # Find question details
+    question_id = None
+    question_data = None
+    for question in userdata.questions:
+        if question.get("question_order") == int(question_number):
+            question_id = question.get("id")
+            question_data = question
+            break
+    
+    if not question_id or not question_data:
+        logger.error(f"Question ID not found for question order {question_number}")
+        return {"success": False, "is_correct": False, "points": 0}
+    
+    # Evaluate answer if it's a quiz question
+    is_quiz = question_data.get("is_quiz_question", False)
+    correct_answer = question_data.get("correct_answer")
+    points_possible = question_data.get("points", 1)
+    
+    is_correct = False
+    points_earned = 0
+    feedback = None
+    
+    if is_quiz and correct_answer:
+        is_correct = evaluate_answer_correctness(answer, correct_answer)
+        if is_correct:
+            points_earned = points_possible
+            feedback = f"Correct! Well done! The answer is: {correct_answer}"
+        else:
+            points_earned = 0
+            feedback = f"Not quite. The correct answer is: {correct_answer}. Keep trying, you're learning!"
+    
+    # Store in quiz_answers
+    userdata.quiz_answers[question_number] = {
+        "answer": answer,
+        "is_correct": is_correct,
+        "points": points_earned
+    }
+    
+    # Update totals
+    if is_quiz:
+        userdata.total_points_earned += points_earned
+        userdata.total_points_possible += points_possible
+        if is_correct:
+            userdata.correct_count += 1
+    
+    # Submit to API
+    try:
+        if is_quiz:
+            success = await submit_quiz_answer_api(
+                userdata.submission_id,
+                question_id,
+                answer,
+                is_correct,
+                points_earned,
+                feedback,
+                is_lesson=userdata.is_lesson_mode
+            )
+        else:
+            # Regular answer submission
+            from api_client import api_client
+            answer_data = {
+                "question_id": question_id,
+                "answer_text": answer
+            }
+            await api_client.submit_answers(userdata.submission_id, [answer_data])
+            success = True
+        
+        if success:
+            logger.info(f"Quiz answer for question {question_number} submitted: correct={is_correct}, points={points_earned}")
+            return {
+                "success": True,
+                "is_correct": is_correct,
+                "points": points_earned,
+                "feedback": feedback
+            }
+    except Exception as e:
+        logger.error(f"Failed to submit quiz answer: {e}")
+    
+    return {"success": False, "is_correct": is_correct, "points": points_earned, "feedback": feedback}
+
+@function_tool
+async def evaluate_quiz_answer(
+    question_number: Annotated[str, Field(description="The question number (e.g., '1', '2', '3')")],
+    answer: Annotated[str, Field(description="The student's answer to evaluate")],
+    ctx: RunContext_T
+) -> str:
+    """Evaluate a quiz answer and provide feedback. Use this for quiz questions."""
+    userdata = ctx.userdata
+    
+    # Submit and evaluate the answer
+    result = await submit_quiz_answer(userdata, question_number, answer)
+    
+    if result["success"]:
+        if result["is_correct"]:
+            encouragement = "Excellent work! " + result.get("feedback", "That's correct!")
+            userdata.performance_feedback.append(f"Q{question_number}: Correct - {encouragement}")
+            return encouragement
+        else:
+            supportive = "Good effort! " + result.get("feedback", "Let's try the next one.")
+            userdata.performance_feedback.append(f"Q{question_number}: Incorrect - {supportive}")
+            return supportive
+    else:
+        return "Answer recorded, but evaluation may be incomplete."
 
 @function_tool
 async def set_questionnaire_answer(
@@ -456,14 +663,27 @@ async def set_questionnaire_answer(
         userdata = ctx.userdata
         userdata.questionnaire_answers[question_number] = answer
 
-        # IMMEDIATELY submit this answer to API (incremental write-through)
-        submission_success = await submit_single_answer(userdata, question_number, answer)
-        if submission_success:
-            logger.info(f"Answer for question {question_number} submitted to API immediately")
+        # Check if this is a quiz question
+        question_data = None
+        for question in userdata.questions:
+            if question.get("question_order") == int(question_number):
+                question_data = question
+                break
+        
+        if question_data and question_data.get("is_quiz_question", False):
+            # Use quiz evaluation
+            result = await submit_quiz_answer(userdata, question_number, answer)
+            if result["success"]:
+                logger.info(f"Quiz answer for question {question_number} evaluated and submitted: correct={result['is_correct']}")
+            else:
+                logger.warning(f"Failed to submit quiz answer for question {question_number}")
         else:
-            logger.warning(f"Failed to submit answer for question {question_number} to API - will retry during finalization")
-            # Track API submission errors
-            # statsd.increment("survey.errors", tags=["type:api_submission"])
+            # Regular answer submission for non-quiz questions
+            submission_success = await submit_single_answer(userdata, question_number, answer)
+            if submission_success:
+                logger.info(f"Answer for question {question_number} submitted to API immediately")
+            else:
+                logger.warning(f"Failed to submit answer for question {question_number} to API - will retry during finalization")
     except Exception as e:
         # Track general errors
         # statsd.increment("survey.errors", tags=["type:general"])
@@ -508,7 +728,7 @@ async def set_questionnaire_answer(
 
     if len(userdata.questionnaire_answers) == len(userdata.questions):
         await send_survey_status(ctx, "in_progress", "All questions answered, ready for completion")
-        return f"Answer for question {question_number} has been saved and submitted to API. Survey complete - ready for finalization: {answer}"
+        return f"Answer for question {question_number} has been saved and submitted to API. Lesson complete - ready for finalization: {answer}"
     else:
         return f"Answer for question {question_number} has been saved and submitted to API: {answer}"
 
@@ -518,37 +738,37 @@ async def check_survey_complete(ctx: RunContext_T) -> str:
     total_questions = len(userdata.questions)
     answered_questions = len(userdata.questionnaire_answers)
     submitted_questions = len(userdata.submitted_answers)
-    logger.info(f"Survey completion check: {answered_questions}/{total_questions} questions answered, {submitted_questions}/{total_questions} submitted")
+    logger.info(f"Lesson completion check: {answered_questions}/{total_questions} questions answered, {submitted_questions}/{total_questions} submitted")
 
     if answered_questions == total_questions:
         # Use the new finalization with disconnect protection
         finalization_success = await finalize_survey_with_protection(userdata, ctx)
 
         if finalization_success:
-            logger.info("Survey completed - all data saved to API with disconnect protection")
+            logger.info("Lesson completed - all data saved to API with disconnect protection")
 
             # Synchronous finalization step - block until API confirms
-            logger.info("Synchronously confirming survey completion with API...")
+            logger.info("Synchronously confirming lesson completion with API...")
 
             # Verify all answers are in the database by checking submission status
             try:
                 from api_client import api_client
                 # This could be enhanced to actually verify the data in the database
                 # For now, we'll just log the confirmation
-                logger.info(f"Survey submission {userdata.submission_id} confirmed complete with {len(userdata.submitted_answers)} answers")
+                logger.info(f"Lesson submission {userdata.submission_id} confirmed complete with {len(userdata.submitted_answers)} answers")
             except Exception as e:
-                logger.warning(f"Could not verify survey completion with API: {e}")
+                logger.warning(f"Could not verify lesson completion with API: {e}")
 
             # Automatically end the call after completion
-            closing_message = userdata.campaign.get("closing", "Thank you for completing the survey. Goodbye!")
+            closing_message = userdata.lesson.get("closing", "Thank you for completing the lesson. Great job! Goodbye!")
 
             # Say the closing message first
             if hasattr(userdata, 'session') and userdata.session:
                 await userdata.session.say(closing_message, allow_interruptions=False)
 
             # Send closing status and end the call
-            await send_survey_status(ctx, "closing", "Survey completed, ending call")
-            logger.info("Survey call ending - closing status sent")
+            await send_survey_status(ctx, "closing", "Lesson completed, ending call")
+            logger.info("Lesson call ending - closing status sent")
 
             # End the session using the correct method
             if hasattr(userdata, 'session') and userdata.session:
@@ -558,31 +778,31 @@ async def check_survey_complete(ctx: RunContext_T) -> str:
                     logger.warning(f"Error closing session: {e}")
                     # Session may already be closed or closing, which is fine
 
-            return f"Survey complete! Said closing message and ended the call."
+            return f"Lesson complete! Said closing message and ended the call."
         else:
-            logger.error("Failed to finalize survey - data may be lost")
-            await send_survey_status(ctx, "error", "Failed to save survey data")
-            return f"Survey completion failed - please try again."
+            logger.error("Failed to finalize lesson - data may be lost")
+            await send_survey_status(ctx, "error", "Failed to save lesson data")
+            return f"Lesson completion failed - please try again."
     else:
         missing_questions = [str(question.get("question_order")) for question in userdata.questions if str(question.get("question_order")) not in userdata.questionnaire_answers]
-        await send_survey_status(ctx, "in_progress", f"Survey incomplete. Missing questions: {missing_questions}")
-        return f"Survey is not complete. {answered_questions}/{total_questions} questions answered. Missing questions: {missing_questions}"
+        await send_survey_status(ctx, "in_progress", f"Lesson incomplete. Missing questions: {missing_questions}")
+        return f"Lesson is not complete. {answered_questions}/{total_questions} questions answered. Missing questions: {missing_questions}"
 
 @function_tool
 async def end_call(ctx: RunContext_T) -> str:
-    """End the survey call after sending closing status"""
+    """End the lesson call after sending closing status"""
     userdata = ctx.userdata
 
     # Send closing status to indicate the call is ending
-    await send_survey_status(ctx, "closing", "Survey completed, ending call")
+    await send_survey_status(ctx, "closing", "Lesson completed, ending call")
 
-    logger.info("Survey call ending - closing status sent")
+    logger.info("Lesson call ending - closing status sent")
 
     return "Call ended successfully"
 
 @function_tool
 async def watchdog_survey_completion(ctx: RunContext_T) -> str:
-    """Watchdog function to check survey completion and retry submissions if needed"""
+    """Watchdog function to check lesson completion and retry submissions if needed"""
     userdata = ctx.userdata
     total_questions = len(userdata.questions)
     answered_questions = len(userdata.questionnaire_answers)
@@ -617,11 +837,11 @@ async def watchdog_survey_completion(ctx: RunContext_T) -> str:
 
         success = await finalize_survey_with_protection(userdata, ctx)
         if success:
-            logger.info("Watchdog: Successfully finalized survey")
-            return "Survey finalized successfully via watchdog"
+            logger.info("Watchdog: Successfully finalized lesson")
+            return "Lesson finalized successfully via watchdog"
         else:
-            logger.error("Watchdog: Failed to finalize survey")
-            return "Survey finalization failed via watchdog"
+            logger.error("Watchdog: Failed to finalize lesson")
+            return "Lesson finalization failed via watchdog"
 
     return f"Watchdog check complete: {answered_questions}/{total_questions} answered, {submitted_questions}/{total_questions} submitted, completed: {userdata.survey_completed}"
 
@@ -659,83 +879,75 @@ async def entrypoint(ctx: agents.JobContext):
     # Increment when a new session starts
     # statsd.increment("livekit.sessions.active")
 
-    # Check if survey submission already exists for this room
-    existing_submission = await get_existing_submission_api(room_name)
-    if existing_submission:
-        logger.info(f"Survey submission already exists for room {room_name} (ID: {existing_submission['id']})")
-        logger.debug(f"Existing submission data: {existing_submission}")
-        submission_id = existing_submission['id']
-        campaign_id = existing_submission['campaign_id']
+    # Check if lesson submission already exists for this room
+    existing_lesson_submission = await get_existing_lesson_submission_api(room_name)
+    lesson_data = None
+    submission_id = None
 
-        # Get campaign details from API using the campaign ID
-        campaign_id = existing_submission.get('campaign_id')
+    if existing_lesson_submission:
+        # Lesson submission already exists
+        logger.info(f"Lesson submission already exists for room {room_name} (ID: {existing_lesson_submission['id']})")
+        logger.debug(f"Existing lesson submission data: {existing_lesson_submission}")
+        submission_id = existing_lesson_submission['id']
+        lesson_id = existing_lesson_submission.get('lesson_id')
 
         try:
-            logger.debug(f"Getting campaign data for ID: {campaign_id}")
-            campaign_data = await get_campaign_by_id(campaign_id)
-            logger.debug(f"Campaign data received: {campaign_data}")
+            logger.debug(f"Getting lesson data for ID: {lesson_id}")
+            lesson_data = await get_lesson_by_id(lesson_id)
+            logger.debug(f"Lesson data received: {lesson_data}")
         except Exception as e:
-            logger.error(f"Failed to get campaign data from API: {e}")
-            # Fallback to basic campaign info from existing submission
-            campaign_data = {
-                "campaign": {
-                    "id": campaign_id,
-                    "name": "Fallback Campaign",
-                    "intro_prompt": "You are conducting a survey.",
-                    "purpose_explanation": "Thank you for participating.",
-                    "greeting": "Hello, welcome to our survey.",
-                    "closing": "Thank you for completing this survey."
+            logger.error(f"Failed to get lesson data from API: {e}")
+            # Fallback to basic lesson info
+            lesson_data = {
+                "lesson": {
+                    "id": lesson_id,
+                    "name": "Fallback Lesson",
+                    "intro_prompt": "You are a friendly and encouraging AI voice teacher.",
+                    "purpose_explanation": "Welcome! I'm here to help you learn.",
+                    "greeting": "Hello, welcome to your lesson!",
+                    "closing": "Thank you for completing the lesson. Great job!"
                 },
                 "questions": []
             }
     else:
-        # For new submissions, we need to determine the campaign and create a submission
-        # Extract campaign URI and link token from room name
-
-        # Parse room name to extract campaign_uri and link_token
-        # Room name format: {room_pattern}{random_suffix}
-        # Example: "survey-api-test-5564" -> campaign_uri: "survey-api-test", link_token: "survey-api-test"
-
-        # Extract campaign_uri from room name by removing the random suffix
-        # The room pattern ends with "-", so we split on the last "-" and take everything before it
+        # For new submissions, parse room name to extract URI and link token
         if "-" in room_name:
-            # Remove the random suffix (everything after the last "-")
             base_pattern = room_name.rsplit("-", 1)[0]
-            campaign_uri = base_pattern
-            link_token = base_pattern  # Use the same base pattern as the link token
+            uri = base_pattern
+            link_token = base_pattern
         else:
-            # Fallback if room name doesn't follow expected pattern
-            campaign_uri = "default"
+            uri = "default"
             link_token = room_name
 
+        # Get lesson data
         try:
-            # Get campaign details from API
-            campaign_data = await get_campaign_by_uri_and_token(campaign_uri, link_token)
-            campaign = campaign_data.get("campaign", {})
+            logger.debug(f"Trying to get lesson for URI: {uri}")
+            lesson_data = await get_lesson_by_uri_and_token(uri, link_token)
+            lesson = lesson_data.get("lesson", {})
 
-            # Create new survey submission via API
+            # Create new lesson submission via API
             link_type = "phone" if phone_number else "email" if email else "generic"
-            submission_response = await record_survey_submission_api(
-                campaign_id=campaign["id"],
+            submission_response = await record_lesson_submission_api(
+                lesson_id=lesson["id"],
                 link_token=link_token,
                 link_type=link_type,
                 room_name=room_name,
                 s3_recording_url=None
             )
             submission_id = submission_response
-            logger.info(f"New survey submission created via API with id: {submission_id}")
+            logger.info(f"New lesson submission created via API with id: {submission_id}")
 
         except Exception as e:
-            logger.error(f"Failed to create submission via API: {e}")
-            # Fallback to basic campaign data
-            campaign_data = {
-                "campaign": {
+            logger.error(f"Failed to get lesson or create submission via API: {e}")
+            # Fallback to basic lesson data
+            lesson_data = {
+                "lesson": {
                     "id": 1,
-                    "name": "Default Campaign",
-                    "intro_prompt": "You are conducting a survey.",
-                    "purpose_explanation": "Thank you for participating.",
-                    "greeting": "Hello, welcome to our survey.",
-                    "closing": "Thank you for completing this survey."
+                    "name": "Default Lesson",
+                    "intro_prompt": "You are a friendly and encouraging AI voice teacher.",
+                    "purpose_explanation": "Welcome! I'm here to help you learn.",
+                    "greeting": "Hello, welcome to your lesson!",
+                    "closing": "Thank you for completing the lesson. Great job!"
                 },
                 "questions": []
             }
@@ -746,36 +958,46 @@ async def entrypoint(ctx: agents.JobContext):
     userdata.customer_phone = phone_number if phone_number else None
     userdata.customer_email = email if email else None
 
-    # Create main agent with campaign data from API
+    # Create main agent with lesson data from API
     userdata.agents.update({
-        "main_agent": MainAgent(campaign_data),
+        "main_agent": MainAgent(lesson_data),
     })
     userdata.questions = userdata.agents["main_agent"].questions
-    userdata.campaign = campaign_data.get("campaign", {})  # Store campaign dict in userdata
+    
+    # Store lesson dict in userdata
+    userdata.lesson = lesson_data.get("lesson", {})
+    userdata.campaign = userdata.lesson  # Keep for backward compatibility
+    
     userdata.submission_id = submission_id  # Set submission_id instead of call_id
     userdata.room = ctx.room  # Store room reference for data publishing
 
     # For backward compatibility, also set call_id to submission_id
     userdata.call_id = submission_id
+    
+    # Set lesson mode (always true now)
+    userdata.is_lesson_mode = True
+    logger.info("Lesson mode enabled - quiz evaluation will be used")
+    # Initialize performance tracking
+    userdata.total_points_possible = sum(q.get("points", 1) for q in userdata.questions if q.get("is_quiz_question", False))
 
     # Start S3 voice recording only if not already started
-    if not existing_submission or not existing_submission.get('s3_recording_url'):
+    if not existing_lesson_submission or not existing_lesson_submission.get('s3_recording_url'):
         recording_success = await start_s3_recording(room_name, userdata)
         if recording_success:
             logger.info("S3 Recording started successfully")
-            # Update the survey submission with the recording URL via API (skip for fallback submission ID)
+            # Update the submission with the recording URL via API (skip for fallback submission ID)
             if hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url and submission_id != "fallback-submission-id":
-                success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url)
+                success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url, is_lesson=True)
                 if not success:
-                    logger.warning(f"Failed to update S3 recording URL via API for submission {submission_id}")
+                    logger.warning(f"Failed to update S3 recording URL via API for lesson submission {submission_id}")
             elif hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url and submission_id == "fallback-submission-id":
                 logger.warning("Cannot update S3 recording URL for fallback submission ID")
         else:
             logger.warning("S3 Recording failed, continuing without recording")
             userdata.s3_recording_url = None  # Explicitly set to None if failed
     else:
-        logger.info("S3 Recording already exists for this survey submission")
-        userdata.s3_recording_url = existing_submission.get('s3_recording_url')
+        logger.info(f"S3 Recording already exists for this lesson submission")
+        userdata.s3_recording_url = existing_lesson_submission.get('s3_recording_url')
 
     await ctx.connect()
     session = AgentSession(

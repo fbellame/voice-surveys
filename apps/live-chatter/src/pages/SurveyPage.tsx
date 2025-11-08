@@ -14,6 +14,13 @@ interface Campaign {
   campaign_uri: string;
 }
 
+interface Lesson {
+  id: number;
+  name: string;
+  description: string | null;
+  lesson_uri: string;
+}
+
 interface SurveyInvitation {
   id: string;
   campaign_id: number;
@@ -41,6 +48,7 @@ const SurveyPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [lesson, setLesson] = useState<Lesson | null>(null);
   const [invitation, setInvitation] = useState<SurveyInvitation | null>(null);
   const [campaignLink, setCampaignLink] = useState<CampaignLink | null>(null);
   const [loading, setLoading] = useState(true);
@@ -141,7 +149,7 @@ const SurveyPage = () => {
 
   const fetchSurveyData = async () => {
       if (!surveySlug) {
-        setError('No survey specified');
+        setError('No survey or lesson specified');
         setLoading(false);
         return;
       }
@@ -153,7 +161,27 @@ const SurveyPage = () => {
       }
 
       try {
-        // First, get the campaign
+        // First, try to get a lesson
+        const { data: lessonData, error: lessonError } = await supabase
+          .from('lesson')
+          .select('*')
+          .eq('lesson_uri', surveySlug)
+          .maybeSingle();
+
+        if (lessonError) {
+          console.error('Error fetching lesson:', lessonError);
+        }
+
+        if (lessonData) {
+          console.log('Found lesson:', lessonData);
+          setLesson(lessonData);
+          // For lessons, we can proceed without token validation for now
+          // (similar to how campaigns work, but lessons might have different auth requirements)
+          setLoading(false);
+          return;
+        }
+
+        // If no lesson found, try to get the campaign
         const { data: campaignData, error: campaignError } = await supabase
           .from('campaign')
           .select('*')
@@ -168,7 +196,7 @@ const SurveyPage = () => {
         }
 
         if (!campaignData) {
-          setError('Survey not found');
+          setError('Survey or lesson not found');
           setLoading(false);
           return;
         }
@@ -264,15 +292,15 @@ const SurveyPage = () => {
     );
   }
 
-  if (error || !campaign) {
+  if (error || (!campaign && !lesson)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md p-8 text-center space-y-4">
-          <h1 className="text-2xl font-bold">Survey Not Found</h1>
-          <p className="text-muted-foreground">{error || 'The requested survey could not be found.'}</p>
+          <h1 className="text-2xl font-bold">{lesson ? 'Lesson' : 'Survey'} Not Found</h1>
+          <p className="text-muted-foreground">{error || `The requested ${lesson ? 'lesson' : 'survey'} could not be found.`}</p>
           <Button onClick={() => navigate('/')} variant="outline" className="w-full">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Survey List
+            Back to Home
           </Button>
         </Card>
       </div>
@@ -292,10 +320,14 @@ const SurveyPage = () => {
           <div className="space-y-2">
             <h1 className="text-3xl font-bold">Thank You!</h1>
             <p className="text-muted-foreground">
-              Thank you for responding to the survey "{campaign?.name}".
+              {lesson 
+                ? `Thank you for completing the lesson "${lesson.name}".`
+                : `Thank you for responding to the survey "${campaign?.name}".`}
             </p>
             <p className="text-sm text-muted-foreground">
-              Your participation is greatly appreciated.
+              {lesson 
+                ? "Great job! Keep up the excellent work."
+                : "Your participation is greatly appreciated."}
             </p>
           </div>
         </Card>
@@ -304,7 +336,12 @@ const SurveyPage = () => {
   }
 
   return <SimpleSurvey 
-    campaign={campaign} 
+    campaign={campaign || (lesson ? {
+      id: lesson.id,
+      name: lesson.name,
+      description: lesson.description,
+      campaign_uri: lesson.lesson_uri
+    } : null)}
     invitation={invitation} 
     campaignLink={campaignLink}
     onComplete={handleComplete} 
