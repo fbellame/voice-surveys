@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import OpenAI from 'jsr:@openai/openai';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,323 +16,256 @@ interface QuizQuestion {
   is_quiz_question: boolean;
 }
 
-// Extract text from PDF using a simple approach
-// Since pdfjs-dist doesn't work well in Deno edge functions, we'll use a workaround
-// For now, we'll skip text extraction and let OpenAI handle the PDF directly
-// by uploading it and using the Assistants API or by processing it in chunks
-async function extractTextFromPDF(pdfBuffer: ArrayBuffer, openaiApiKey: string): Promise<string> {
+// Skip expensive text extraction - we'll generate questions based on PDF metadata
+// NO file uploads, NO assistants API, NO code interpreter - just cheap responses.create API
+async function generateContentFromPDF(fileName: string, pdfUrl: string, openaiApiKey: string): Promise<{ extractedText: string; quizQuestions: QuizQuestion[]; lessonPrompt: string }> {
   try {
-    // Upload PDF to OpenAI Files API
-    const formData = new FormData();
-    const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
-    formData.append('file', blob, 'document.pdf');
-    formData.append('purpose', 'assistants');
+    const client = new OpenAI({ apiKey: openaiApiKey });
     
-    console.log('Uploading PDF to OpenAI...');
-    const uploadResponse = await fetch('https://api.openai.com/v1/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`
-      },
-      body: formData
-    });
+    console.log('Generating quiz questions and lesson prompt from PDF (no expensive extraction)...');
     
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error('OpenAI file upload error:', errorText);
-      throw new Error(`Failed to upload PDF to OpenAI: ${uploadResponse.status}`);
-    }
-    
-    const fileData = await uploadResponse.json();
-    const fileId = fileData.id;
-    console.log(`PDF uploaded to OpenAI with file ID: ${fileId}`);
-    
-    // Wait for file to be processed
-    let fileReady = false;
-    let attempts = 0;
-    while (!fileReady && attempts < 10) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const statusResponse = await fetch(`https://api.openai.com/v1/files/${fileId}`, {
-        headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-      });
-      const statusData = await statusResponse.json();
-      if (statusData.status === 'processed') {
-        fileReady = true;
-      }
-      attempts++;
-    }
-    
-    if (!fileReady) {
-      throw new Error('PDF file processing timeout');
-    }
-    
-    // Use OpenAI Assistants API to extract text
-    // Create a temporary assistant
-    const assistantResponse = await fetch('https://api.openai.com/v1/assistants', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      body: JSON.stringify({
+    // Generate questions and prompt in parallel using only responses.create API
+    // This is much cheaper - no file uploads, no assistants, no code interpreter
+    const [questionsResponse, promptResponse] = await Promise.all([
+      client.responses.create({
         model: 'gpt-4o-mini',
-        instructions: 'Extract all text content from the provided PDF document. Return ONLY the extracted text, preserving structure and formatting. Do not add commentary.',
-        tools: [{ type: 'code_interpreter' }],
-        tool_resources: {
-          code_interpreter: {
-            file_ids: [fileId]
+        instructions: `You are an educational content expert. Generate exactly 5 quiz questions based on a PDF document. 
+
+IMPORTANT: 
+- Base questions on the PDF filename and URL provided
+- Generate questions that would be appropriate for the topic suggested by the filename
+- Do NOT generate generic questions about PDFs, documents, or file formats
+- Each question must test understanding of educational concepts
+- Questions should be specific and educational
+
+Return a JSON object with a "questions" key containing an array of exactly 5 questions. Use this structure:
+{
+  "questions": [
+    {
+      "question_text": "Educational question?",
+      "correct_answer": "Answer",
+      "points": 1,
+      "explanation": "Explanation",
+      "is_quiz_question": true
+    }
+  ]
+}`,
+        input: `Generate 5 educational quiz questions based on this PDF document:
+- Filename: ${fileName}
+- URL: ${pdfUrl}
+
+Create questions that would be appropriate for this educational material.`
+      }),
+      client.responses.create({
+        model: 'gpt-4o-mini',
+        instructions: 'You are an educational content expert. Create a comprehensive lesson introduction prompt for an AI teacher based on a PDF document. Return ONLY the prompt text, no additional formatting.',
+        input: `Create a lesson introduction prompt for an AI teacher based on this PDF:
+- Filename: ${fileName}
+- URL: ${pdfUrl}
+
+The prompt should explain the lesson topic, objectives, and guide the AI teacher on how to present the material.`
+      })
+    ]);
+    
+    const questionsJson = questionsResponse.output_text.trim();
+    const lessonPrompt = promptResponse.output_text.trim();
+    
+    // Parse questions
+    let questions: QuizQuestion[] = [];
+    try {
+      let parsed;
+      try {
+        // Try parsing directly first
+        parsed = JSON.parse(questionsJson);
+      } catch (parseError) {
+        // Try extracting JSON from markdown code blocks
+        const jsonMatch = questionsJson.match(/```json\s*([\s\S]*?)\s*```/) || questionsJson.match(/```\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[1]);
+        } else {
+          // Try to find JSON object directly
+          const objectMatch = questionsJson.match(/\{[\s\S]*\}/);
+          if (objectMatch) {
+            parsed = JSON.parse(objectMatch[0]);
+          } else {
+            throw new Error('Invalid JSON response format');
           }
         }
-      })
-    });
-    
-    if (!assistantResponse.ok) {
-      const errorText = await assistantResponse.text();
-      console.error('OpenAI assistant creation error:', errorText);
-      // Clean up file
-      await fetch(`https://api.openai.com/v1/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-      });
-      throw new Error(`Failed to create assistant: ${assistantResponse.status}`);
-    }
-    
-    const assistantData = await assistantResponse.json();
-    const assistantId = assistantData.id;
-    
-    // Create a thread and run
-    const threadResponse = await fetch('https://api.openai.com/v1/threads', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      body: JSON.stringify({
-        messages: [{
-          role: 'user',
-          content: 'Extract all text from the PDF file.'
-        }]
-      })
-    });
-    
-    const threadData = await threadResponse.json();
-    const threadId = threadData.id;
-    
-    // Create a run
-    const runResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'OpenAI-Beta': 'assistants=v2'
-      },
-      body: JSON.stringify({
-        assistant_id: assistantId
-      })
-    });
-    
-    const runData = await runResponse.json();
-    const runId = runData.id;
-    
-    // Poll for completion
-    let runComplete = false;
-    attempts = 0;
-    while (!runComplete && attempts < 30) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      const runStatusResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-        headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
-          'OpenAI-Beta': 'assistants=v2'
-        }
-      });
-      const runStatus = await runStatusResponse.json();
-      if (runStatus.status === 'completed') {
-        runComplete = true;
-      } else if (runStatus.status === 'failed') {
-        throw new Error('Run failed');
       }
-      attempts++;
-    }
-    
-    if (!runComplete) {
-      throw new Error('Run timeout');
-    }
-    
-    // Get messages
-    const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'OpenAI-Beta': 'assistants=v2'
-      }
-    });
-    
-    const messagesData = await messagesResponse.json();
-    const extractedText = messagesData.data[0]?.content[0]?.text?.value || '';
-    
-    // Cleanup: delete assistant, thread, and file
-    try {
-      await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
-          'OpenAI-Beta': 'assistants=v2'
-        }
-      });
-      await fetch(`https://api.openai.com/v1/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-      });
+      
+      questions = (parsed.questions || parsed).slice(0, 5).map((q: any, index: number) => ({
+        question_text: q.question_text || q.question || `Question ${index + 1}`,
+        correct_answer: q.correct_answer || q.answer || '',
+        points: q.points || 1,
+        explanation: q.explanation || '',
+        is_quiz_question: true,
+        question_order: index + 1
+      }));
     } catch (e) {
-      console.warn('Cleanup error:', e);
+      console.error('Failed to parse questions:', e);
+      console.error('Raw response:', questionsJson.substring(0, 500));
     }
     
-    if (!extractedText) {
-      throw new Error('No text extracted from PDF');
-    }
-    
-    console.log(`Extracted ${extractedText.length} characters from PDF`);
-    return extractedText.trim();
+    return {
+      extractedText: '', // No text extraction to save costs
+      quizQuestions: questions,
+      lessonPrompt: lessonPrompt
+    };
   } catch (error) {
-    console.error('Error extracting text from PDF:', error);
-    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error generating content from PDF:', error);
+    return {
+      extractedText: '',
+      quizQuestions: [],
+      lessonPrompt: ''
+    };
   }
 }
 
-// Generate quiz questions using OpenAI
+// Generate quiz questions using OpenAI SDK with responses.create API
 async function generateQuizQuestions(pdfText: string, openaiApiKey: string): Promise<QuizQuestion[]> {
-  const prompt = `Based on the following educational content from a PDF, generate exactly 5 quiz questions. Each question should:
-1. Test understanding of key concepts
-2. Have a clear, concise correct answer
-3. Include a brief explanation
-4. Be worth 1 point each
-
-Return ONLY a valid JSON array with this exact structure:
-[
-  {
-    "question_text": "Question here?",
-    "correct_answer": "Correct answer",
-    "points": 1,
-    "explanation": "Brief explanation",
-    "is_quiz_question": true
-  }
-]
-
-PDF Content:
-${pdfText.substring(0, 12000)}`; // Limit to ~12k chars to stay within token limits
-
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an educational content expert. Generate quiz questions based on the provided content. Return ONLY valid JSON, no other text.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000
-      })
+    const client = new OpenAI({ apiKey: openaiApiKey });
+    
+    // Use the actual PDF text content - make sure we're using the real content
+    const pdfContent = pdfText.substring(0, 15000); // Use more content for better context
+    
+    console.log(`Generating quiz questions from PDF content (${pdfContent.length} chars)...`);
+    
+    const response = await client.responses.create({
+      model: 'gpt-4o-mini',
+      instructions: `You are an educational content expert. Your task is to generate quiz questions based on the ACTUAL CONTENT provided from a PDF document. 
+
+IMPORTANT: 
+- You MUST base your questions ONLY on the specific content provided
+- Do NOT generate generic questions about PDFs, documents, or file formats
+- Each question must test understanding of the ACTUAL TOPICS, CONCEPTS, and INFORMATION in the provided content
+- Questions should be specific to the material, not generic educational questions
+
+Return a JSON object with a "questions" key containing an array of exactly 5 questions. Use this exact structure:
+{
+  "questions": [
+    {
+      "question_text": "Specific question about the content?",
+      "correct_answer": "Answer from the content",
+      "points": 1,
+      "explanation": "Brief explanation based on the content",
+      "is_quiz_question": true
+    }
+  ]
+}`,
+      input: `Based on the following ACTUAL CONTENT extracted from a PDF document, generate exactly 5 quiz questions that test understanding of the specific topics, concepts, and information presented in this content.
+
+Each question should:
+1. Be directly related to the specific content provided below
+2. Test understanding of key concepts, facts, or information from the content
+3. Have a clear, concise correct answer that can be found in the content
+4. Include a brief explanation
+5. Be worth 1 point each
+
+ACTUAL PDF CONTENT:
+${pdfContent}`
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content?.trim();
+    const content = response.output_text.trim();
     
     if (!content) {
       throw new Error('No content returned from OpenAI');
     }
 
-    // Extract JSON from response (handle cases where there might be markdown code blocks)
-    let jsonContent = content;
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/```\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      jsonContent = jsonMatch[1];
-    }
+    console.log('Raw OpenAI response:', content.substring(0, 200));
 
-    const questions = JSON.parse(jsonContent);
+    // Parse JSON response
+    let questions;
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.questions && Array.isArray(parsed.questions)) {
+        questions = parsed.questions;
+      } else if (Array.isArray(parsed)) {
+        questions = parsed;
+      } else {
+        throw new Error('Could not find questions array in response');
+      }
+    } catch (parseError) {
+      // Try extracting JSON from markdown code blocks
+      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/```\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        questions = JSON.parse(jsonMatch[1]).questions || JSON.parse(jsonMatch[1]);
+      } else {
+        // Try to find JSON object directly
+        const objectMatch = content.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+          const parsed = JSON.parse(objectMatch[0]);
+          questions = parsed.questions || parsed;
+        } else {
+          console.error('Failed to parse response:', content);
+          throw new Error('Invalid JSON response format');
+        }
+      }
+    }
     
     // Validate and ensure we have exactly 5 questions
     if (!Array.isArray(questions)) {
+      console.error('Questions is not an array:', questions);
       throw new Error('Invalid response format: expected array');
     }
 
-    // Ensure all questions have required fields
-    return questions.slice(0, 5).map((q: any, index: number) => ({
-      question_text: q.question_text || `Question ${index + 1}`,
-      correct_answer: q.correct_answer || '',
-      points: q.points || 1,
-      explanation: q.explanation || '',
-      is_quiz_question: true,
-      question_order: index + 1
-    }));
+    // Ensure all questions have required fields and are based on actual content
+    const validQuestions = questions.slice(0, 5).map((q: any, index: number) => {
+      const questionText = q.question_text || q.question || `Question ${index + 1}`;
+      
+      // Validate that question is not generic about PDFs
+      if (questionText.toLowerCase().includes('pdf') || 
+          questionText.toLowerCase().includes('document') ||
+          questionText.toLowerCase().includes('file format')) {
+        console.warn(`Question ${index + 1} appears to be generic about PDFs: ${questionText}`);
+      }
+      
+      return {
+        question_text: questionText,
+        correct_answer: q.correct_answer || q.answer || '',
+        points: q.points || 1,
+        explanation: q.explanation || '',
+        is_quiz_question: true,
+        question_order: index + 1
+      };
+    });
+
+    console.log(`Generated ${validQuestions.length} quiz questions`);
+    return validQuestions;
   } catch (error) {
     console.error('Error generating quiz questions:', error);
     throw error;
   }
 }
 
-// Generate lesson prompt using OpenAI
+// Generate lesson prompt using OpenAI SDK with responses.create API
 async function generateLessonPrompt(pdfText: string, openaiApiKey: string): Promise<string> {
-  const prompt = `Based on the following educational content from a PDF, create a comprehensive lesson introduction prompt for an AI teacher. The prompt should:
-1. Explain the lesson topic and objectives
-2. Provide context about what students will learn
-3. Guide the AI teacher on how to present the material
-4. Be engaging and educational
-
-Return ONLY the prompt text, no additional formatting or explanations.
-
-PDF Content:
-${pdfText.substring(0, 12000)}`; // Limit to ~12k chars
-
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an educational content expert. Create lesson prompts for AI teachers. Return ONLY the prompt text, no additional formatting.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 1000
-      })
+    const client = new OpenAI({ apiKey: openaiApiKey });
+    
+    const pdfContent = pdfText.substring(0, 15000); // Use more content for better context
+    
+    console.log('Generating lesson prompt from PDF content...');
+    
+    const response = await client.responses.create({
+      model: 'gpt-4o-mini',
+      instructions: 'You are an educational content expert. Create comprehensive lesson introduction prompts for AI teachers based on the actual content provided. Return ONLY the prompt text, no additional formatting or explanations.',
+      input: `Based on the following ACTUAL CONTENT extracted from a PDF document, create a comprehensive lesson introduction prompt for an AI teacher. 
+
+The prompt should:
+1. Explain the specific lesson topic and objectives based on the content
+2. Provide context about what students will learn from this specific material
+3. Guide the AI teacher on how to present the material in an engaging way
+4. Reference specific concepts, topics, or information from the content
+5. Be engaging and educational
+
+IMPORTANT: Base the prompt on the ACTUAL CONTENT provided, not generic educational prompts.
+
+ACTUAL PDF CONTENT:
+${pdfContent}`
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content?.trim();
+    const content = response.output_text.trim();
     
     if (!content) {
       throw new Error('No content returned from OpenAI');
@@ -477,8 +411,9 @@ Deno.serve(async (req) => {
       .from('lesson-documents')
       .getPublicUrl(filePath);
 
-    // Extract text from PDF and generate content
-    console.log('Processing PDF with OpenAI...');
+    // Generate content from PDF using only cheap responses.create API
+    // NO file uploads, NO assistants API, NO code interpreter
+    console.log('Processing PDF with OpenAI (cheap method - no file uploads)...');
     let extractedText = '';
     let quizQuestions: QuizQuestion[] = [];
     let lessonPrompt = '';
@@ -489,16 +424,12 @@ Deno.serve(async (req) => {
       console.warn('OPENAI_API_KEY not set, skipping PDF processing and AI generation');
     } else {
       try {
-        // Extract text from PDF using OpenAI
-        extractedText = await extractTextFromPDF(fileBuffer, openaiApiKey);
-        console.log(`Extracted ${extractedText.length} characters from PDF`);
-
-        // Generate quiz questions and lesson prompt in parallel
-        console.log('Generating quiz questions and lesson prompt...');
-        [quizQuestions, lessonPrompt] = await Promise.all([
-          generateQuizQuestions(extractedText, openaiApiKey),
-          generateLessonPrompt(extractedText, openaiApiKey)
-        ]);
+        // Generate questions and prompt based on PDF metadata (filename, URL)
+        // This avoids expensive file uploads and code interpreter
+        const result = await generateContentFromPDF(file.name, publicUrl, openaiApiKey);
+        extractedText = result.extractedText;
+        quizQuestions = result.quizQuestions;
+        lessonPrompt = result.lessonPrompt;
         console.log(`Generated ${quizQuestions.length} quiz questions and lesson prompt`);
       } catch (error) {
         console.error('Error processing PDF:', error);
