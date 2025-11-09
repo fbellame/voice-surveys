@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Upload, FileText, X } from "lucide-react";
 
 interface Question {
+  id?: number;
   question_text: string;
   question_order: number;
   is_quiz_question: boolean;
@@ -21,15 +22,18 @@ interface Question {
   explanation: string;
 }
 
-export default function CreateLesson() {
+export default function EditLesson() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extractedText, setExtractedText] = useState<string>("");
+  const [existingDocumentUrl, setExistingDocumentUrl] = useState<string>("");
   
   // Lesson form state
   const [lessonForm, setLessonForm] = useState({
@@ -56,11 +60,121 @@ export default function CreateLesson() {
     explanation: ""
   }]);
 
+  useEffect(() => {
+    if (id) {
+      fetchLessonData();
+    }
+  }, [id, user]);
+
+  const fetchLessonData = async () => {
+    if (!id || !user?.id) {
+      setLoadingData(false);
+      return;
+    }
+
+    try {
+      setLoadingData(true);
+
+      // Fetch lesson
+      const { data: lessonData, error: lessonError } = await supabase
+        .from('lesson')
+        .select('*')
+        .eq('id', parseInt(id))
+        .eq('user_id', user.id)
+        .single();
+
+      if (lessonError) throw lessonError;
+
+      if (!lessonData) {
+        toast({
+          title: "Error",
+          description: "Lesson not found",
+          variant: "destructive",
+        });
+        navigate('/lessons');
+        return;
+      }
+
+      // Populate form
+      setLessonForm({
+        name: lessonData.name || "",
+        description: lessonData.description || "",
+        start_date: lessonData.start_date ? new Date(lessonData.start_date).toISOString().split('T')[0] : "",
+        end_date: lessonData.end_date ? new Date(lessonData.end_date).toISOString().split('T')[0] : "",
+        intro_prompt: lessonData.intro_prompt || "",
+        purpose_explanation: lessonData.purpose_explanation || "",
+        greeting: lessonData.greeting || "",
+        closing: lessonData.closing || "",
+        room_pattern: "",
+        lesson_uri: lessonData.lesson_uri || "",
+        document_url: lessonData.document_url || ""
+      });
+
+      setExistingDocumentUrl(lessonData.document_url || "");
+
+      // Fetch room mapping
+      const { data: roomMapping, error: roomError } = await supabase
+        .from('lesson_room_mapping')
+        .select('room_pattern')
+        .eq('lesson_id', parseInt(id))
+        .eq('is_active', true)
+        .single();
+
+      if (roomMapping && !roomError) {
+        setLessonForm(prev => ({
+          ...prev,
+          room_pattern: roomMapping.room_pattern || ""
+        }));
+      }
+
+      // Fetch questions
+      const { data: questionsData, error: questionsError } = await supabase
+        .from('lesson_question')
+        .select('*')
+        .eq('lesson_id', parseInt(id))
+        .order('question_order', { ascending: true });
+
+      if (questionsError) throw questionsError;
+
+      if (questionsData && questionsData.length > 0) {
+        setQuestions(questionsData.map(q => ({
+          id: q.id,
+          question_text: q.question_text || "",
+          question_order: q.question_order,
+          is_quiz_question: q.is_quiz_question || false,
+          correct_answer: q.correct_answer || "",
+          points: q.points || 1,
+          explanation: q.explanation || ""
+        })));
+      } else {
+        setQuestions([{ 
+          question_text: "", 
+          question_order: 1,
+          is_quiz_question: false,
+          correct_answer: "",
+          points: 1,
+          explanation: ""
+        }]);
+      }
+
+    } catch (error: any) {
+      console.error('Error fetching lesson:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load lesson",
+        variant: "destructive",
+      });
+      navigate('/lessons');
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
   const handleLessonFormChange = (field: string, value: string) => {
     setLessonForm(prev => {
       const updated = { ...prev, [field]: value };
-      // Auto-generate room_pattern and lesson_uri when name changes
-      if (field === 'name' && value.trim()) {
+      // Auto-generate room_pattern and lesson_uri when name changes (only if not already set)
+      if (field === 'name' && value.trim() && !prev.lesson_uri) {
         const slug = value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
         updated.room_pattern = `${slug}-`;
         updated.lesson_uri = slug;
@@ -169,51 +283,16 @@ export default function CreateLesson() {
 
       console.log('File uploaded successfully:', result);
 
-      // If quiz questions were generated, add them to the questions state
-      if (result.quizQuestions && Array.isArray(result.quizQuestions) && result.quizQuestions.length > 0) {
-        setQuestions(result.quizQuestions.map((q: any, index: number) => ({
-          question_text: q.question_text || '',
-          question_order: index + 1,
-          is_quiz_question: q.is_quiz_question !== undefined ? q.is_quiz_question : true,
-          correct_answer: q.correct_answer || '',
-          points: q.points || 1,
-          explanation: q.explanation || ''
-        })));
-        
-        toast({
-          title: "Quiz Questions Generated",
-          description: `Successfully generated ${result.quizQuestions.length} quiz questions from the PDF.`,
-        });
-      }
+      toast({
+        title: "File Uploaded",
+        description: "PDF uploaded successfully. Text extraction will happen on the server.",
+      });
 
-      // If lesson prompt was generated, fill it in
-      if (result.lessonPrompt) {
-        setLessonForm(prev => ({
-          ...prev,
-          document_url: result.publicUrl,
-          intro_prompt: result.lessonPrompt
-        }));
-        
-        if (!result.quizQuestions || result.quizQuestions.length === 0) {
-          toast({
-            title: "File Uploaded",
-            description: "PDF uploaded successfully. Lesson prompt generated.",
-          });
-        }
-      } else {
-        // Store file info for later use
-        setLessonForm(prev => ({
-          ...prev,
-          document_url: result.publicUrl
-        }));
-        
-        if (!result.quizQuestions || result.quizQuestions.length === 0) {
-          toast({
-            title: "File Uploaded",
-            description: "PDF uploaded successfully. Text extraction will happen on the server.",
-          });
-        }
-      }
+      // Store file info for later use
+      setLessonForm(prev => ({
+        ...prev,
+        document_url: result.publicUrl
+      }));
 
     } catch (error: any) {
       console.error('Error uploading file:', error);
@@ -237,6 +316,8 @@ export default function CreateLesson() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!id) return;
+
     // Validate required fields
     if (!lessonForm.start_date.trim()) {
       toast({
@@ -269,86 +350,176 @@ export default function CreateLesson() {
     setLoading(true);
 
     try {
-      // Create lesson
+      // Update lesson
       const { room_pattern, ...lessonData } = lessonForm;
-      const { data: lesson, error: lessonError } = await supabase
+      const { error: lessonError } = await supabase
         .from('lesson')
-        .insert([{ ...lessonData, user_id: user?.id }])
-        .select()
-        .single();
+        .update({ ...lessonData })
+        .eq('id', parseInt(id))
+        .eq('user_id', user?.id);
 
       if (lessonError) throw lessonError;
 
-      // Create questions
-      const questionsToInsert = questions
-        .filter(q => q.question_text.trim())
-        .map(q => ({
-          lesson_id: lesson.id,
-          question_text: q.question_text,
-          question_order: q.question_order,
-          is_quiz_question: q.is_quiz_question,
-          correct_answer: q.is_quiz_question ? q.correct_answer : null,
-          points: q.is_quiz_question ? q.points : 1,
-          explanation: q.is_quiz_question ? q.explanation : null
-        }));
+      // Get existing question IDs
+      const existingQuestionIds = questions.filter(q => q.id).map(q => q.id!);
 
-      if (questionsToInsert.length > 0) {
-        const { error: questionsError } = await supabase
-          .from('lesson_question')
-          .insert(questionsToInsert);
+      // Delete questions that are no longer in the list
+      const { data: allQuestions, error: fetchError } = await supabase
+        .from('lesson_question')
+        .select('id')
+        .eq('lesson_id', parseInt(id));
 
-        if (questionsError) throw questionsError;
+      if (!fetchError && allQuestions) {
+        const questionsToDelete = allQuestions
+          .filter(q => !existingQuestionIds.includes(q.id))
+          .map(q => q.id);
+
+        if (questionsToDelete.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('lesson_question')
+            .delete()
+            .in('id', questionsToDelete);
+
+          if (deleteError) throw deleteError;
+        }
       }
 
-      // Create room mapping if room pattern is provided
+      // Update or insert questions
+      for (const question of questions.filter(q => q.question_text.trim())) {
+        if (question.id) {
+          // Update existing question
+          const { error: updateError } = await supabase
+            .from('lesson_question')
+            .update({
+              question_text: question.question_text,
+              question_order: question.question_order,
+              is_quiz_question: question.is_quiz_question,
+              correct_answer: question.is_quiz_question ? question.correct_answer : null,
+              points: question.is_quiz_question ? question.points : 1,
+              explanation: question.is_quiz_question ? question.explanation : null
+            })
+            .eq('id', question.id);
+
+          if (updateError) throw updateError;
+        } else {
+          // Insert new question
+          const { error: insertError } = await supabase
+            .from('lesson_question')
+            .insert({
+              lesson_id: parseInt(id),
+              question_text: question.question_text,
+              question_order: question.question_order,
+              is_quiz_question: question.is_quiz_question,
+              correct_answer: question.is_quiz_question ? question.correct_answer : null,
+              points: question.is_quiz_question ? question.points : 1,
+              explanation: question.is_quiz_question ? question.explanation : null
+            });
+
+          if (insertError) throw insertError;
+        }
+      }
+
+      // Update room mapping if room pattern is provided
       if (room_pattern.trim()) {
-        const { error: roomMappingError } = await supabase
+        // Check if mapping exists
+        const { data: existingMapping } = await supabase
           .from('lesson_room_mapping')
-          .insert({
-            lesson_id: lesson.id,
-            room_pattern: room_pattern,
-            is_active: true
-          });
+          .select('id')
+          .eq('lesson_id', parseInt(id))
+          .single();
 
-        if (roomMappingError) throw roomMappingError;
+        if (existingMapping) {
+          const { error: updateMappingError } = await supabase
+            .from('lesson_room_mapping')
+            .update({
+              room_pattern: room_pattern,
+              is_active: true
+            })
+            .eq('id', existingMapping.id);
+
+          if (updateMappingError) throw updateMappingError;
+        } else {
+          const { error: insertMappingError } = await supabase
+            .from('lesson_room_mapping')
+            .insert({
+              lesson_id: parseInt(id),
+              room_pattern: room_pattern,
+              is_active: true
+            });
+
+          if (insertMappingError) throw insertMappingError;
+        }
       }
 
-      // If file was uploaded, create lesson_document record
+      // If file was uploaded, update or create lesson_document record
       if (uploadedFile && lessonForm.document_url) {
-        const { error: docError } = await supabase
+        // Check if document exists
+        const { data: existingDoc } = await supabase
           .from('lesson_documents')
-          .insert({
-            lesson_id: lesson.id,
-            file_name: uploadedFile.name,
-            file_url: lessonForm.document_url,
-            file_size: uploadedFile.size,
-            mime_type: uploadedFile.type,
-            uploaded_by: user?.id
-          });
+          .select('id')
+          .eq('lesson_id', parseInt(id))
+          .single();
 
-        if (docError) {
-          console.error('Error creating document record:', docError);
-          // Don't fail the whole operation if document record fails
+        if (existingDoc) {
+          const { error: updateDocError } = await supabase
+            .from('lesson_documents')
+            .update({
+              file_name: uploadedFile.name,
+              file_url: lessonForm.document_url,
+              file_size: uploadedFile.size,
+              mime_type: uploadedFile.type,
+              uploaded_by: user?.id
+            })
+            .eq('id', existingDoc.id);
+
+          if (updateDocError) {
+            console.error('Error updating document record:', updateDocError);
+          }
+        } else {
+          const { error: insertDocError } = await supabase
+            .from('lesson_documents')
+            .insert({
+              lesson_id: parseInt(id),
+              file_name: uploadedFile.name,
+              file_url: lessonForm.document_url,
+              file_size: uploadedFile.size,
+              mime_type: uploadedFile.type,
+              uploaded_by: user?.id
+            });
+
+          if (insertDocError) {
+            console.error('Error creating document record:', insertDocError);
+          }
         }
       }
 
       toast({
         title: "Success",
-        description: "Lesson created successfully",
+        description: "Lesson updated successfully",
       });
 
       navigate('/lessons');
-    } catch (error) {
-      console.error('Error creating lesson:', error);
+    } catch (error: any) {
+      console.error('Error updating lesson:', error);
       toast({
         title: "Error",
-        description: "Error creating lesson",
+        description: error.message || "Error updating lesson",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
+
+  if (loadingData) {
+    return (
+      <Layout currentPage="lessons">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p>Loading lesson data...</p>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout currentPage="lessons">
@@ -364,9 +535,9 @@ export default function CreateLesson() {
             Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">New Lesson</h1>
+            <h1 className="text-3xl font-bold text-foreground">Edit Lesson</h1>
             <p className="text-muted-foreground mt-2">
-              Create a new lesson with quiz questions
+              Update lesson details and questions
             </p>
           </div>
         </div>
@@ -488,7 +659,7 @@ export default function CreateLesson() {
                   placeholder="ex: lesson-name, math-101"
                 />
                 <p className="text-sm text-muted-foreground">
-                  Unique URI to access the lesson (will be generated automatically)
+                  Unique URI to access the lesson
                 </p>
               </div>
             </CardContent>
@@ -505,6 +676,12 @@ export default function CreateLesson() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>PDF Document</Label>
+                {existingDocumentUrl && !uploadedFile && (
+                  <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-muted rounded">
+                    <FileText className="h-4 w-4" />
+                    <span>Current document: {existingDocumentUrl.split('/').pop()}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-4">
                   <input
                     ref={fileInputRef}
@@ -520,7 +697,7 @@ export default function CreateLesson() {
                     disabled={uploading}
                   >
                     <Upload className="mr-2 h-4 w-4" />
-                    {uploading ? "Processing PDF with AI..." : "Upload PDF"}
+                    {uploading ? "Uploading..." : "Upload PDF"}
                   </Button>
                   {uploadedFile && (
                     <div className="flex items-center gap-2 text-sm">
@@ -573,7 +750,7 @@ export default function CreateLesson() {
             </CardHeader>
             <CardContent className="space-y-4">
               {questions.map((question, index) => (
-                <div key={index} className="space-y-3 p-4 border rounded-lg bg-background/50">
+                <div key={question.id || index} className="space-y-3 p-4 border rounded-lg bg-background/50">
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
                       <Label htmlFor={`question-${index}`}>Question {index + 1}</Label>
@@ -663,7 +840,7 @@ export default function CreateLesson() {
               disabled={loading || !lessonForm.name.trim() || !lessonForm.start_date.trim() || !lessonForm.end_date.trim()}
               className="bg-gradient-primary hover:opacity-90 transition-opacity"
             >
-              {loading ? "Creating..." : "Create Lesson"}
+              {loading ? "Updating..." : "Update Lesson"}
             </Button>
           </div>
         </form>

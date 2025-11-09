@@ -9,6 +9,8 @@ import Login from "./pages/Login";
 import { Auth } from "./pages/Auth";
 import Lessons from "./pages/Lessons";
 import CreateLesson from "./pages/CreateLesson";
+import EditLesson from "./pages/EditLesson";
+import LessonPerformance from "./pages/LessonPerformance";
 import Students from "./pages/Students";
 import StudentPerformance from "./pages/StudentPerformance";
 import Answers from "./pages/Answers";
@@ -63,6 +65,22 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <CreateLesson />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/lessons/:id/performance" 
+            element={
+              <ProtectedRoute>
+                <LessonPerformance />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/lessons/edit/:id" 
+            element={
+              <ProtectedRoute>
+                <EditLesson />
               </ProtectedRoute>
             } 
           />

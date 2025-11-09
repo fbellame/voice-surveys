@@ -13,6 +13,12 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- Create RLS policies for the bucket
+-- Drop existing policies if they exist (to allow re-running this migration)
+DROP POLICY IF EXISTS "Allow authenticated users to upload lesson documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to read lesson documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public read access to lesson documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to delete lesson documents" ON storage.objects;
+
 -- Allow authenticated users to upload files
 CREATE POLICY "Allow authenticated users to upload lesson documents"
 ON storage.objects FOR INSERT
