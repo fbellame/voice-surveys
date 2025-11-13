@@ -88,19 +88,34 @@ export default function QuizzesPage() {
         ) : (
           <div className="grid gap-4">
             {quizzes.map((quiz) => (
-              <Link
+              <div
                 key={quiz.id}
-                href={`/quizzes/${quiz.id}`}
                 className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition"
               >
-                <h2 className="text-xl font-semibold mb-2">{quiz.title}</h2>
-                <p className="text-sm text-gray-600 mb-2">
-                  From: {quiz.document?.title || "Unknown document"}
-                </p>
-                <p className="text-xs text-gray-500">
-                  Created: {new Date(quiz.created_at).toLocaleDateString()}
-                </p>
-              </Link>
+                <Link href={`/quizzes/${quiz.id}`}>
+                  <h2 className="text-xl font-semibold mb-2">{quiz.title}</h2>
+                  <p className="text-sm text-gray-600 mb-2">
+                    From: {quiz.document?.title || "Unknown document"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Created: {new Date(quiz.created_at).toLocaleDateString()}
+                  </p>
+                </Link>
+                <div className="mt-4 flex gap-2">
+                  <Link
+                    href={`/quizzes/${quiz.id}`}
+                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Take Quiz
+                  </Link>
+                  <Link
+                    href={`/quizzes/${quiz.id}/manage`}
+                    className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+                  >
+                    Manage
+                  </Link>
+                </div>
+              </div>
             ))}
           </div>
         )}

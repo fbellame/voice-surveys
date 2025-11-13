@@ -14,63 +14,74 @@ interface Question {
   rationale?: string;
 }
 
-export default function QuizPage({ params }: { params: { id: string } }) {
+interface QuizLink {
+  id: string;
+  quiz_id: string;
+  name: string | null;
+  is_active: boolean;
+  max_attempts: number | null;
+  expires_at: string | null;
+  quiz: {
+    id: string;
+    title: string;
+  };
+}
+
+export default function AnonymousQuizPage({ params }: { params: { token: string } }) {
+  const [quizLink, setQuizLink] = useState<QuizLink | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [quizTitle, setQuizTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [assignmentId, setAssignmentId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    loadQuiz();
-    checkAssignment();
-  }, [params.id]);
+    loadQuizLink();
+  }, [params.token]);
 
-  const checkAssignment = async () => {
+  const loadQuizLink = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      // Check if user has an assignment for this quiz
-      const { data, error } = await supabase
-        .from("quiz_assignments")
-        .select("id")
-        .eq("quiz_id", params.id)
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!error && data) {
-        setAssignmentId(data.id);
-      }
-    } catch (error) {
-      // No assignment found, that's okay
-    }
-  };
-
-  const loadQuiz = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("quizzes")
+      // Load quiz link
+      const { data: linkData, error: linkError } = await supabase
+        .from("quiz_links")
         .select(`
           id,
-          title,
-          questions:questions(id, type, prompt, options, correct_answer, rationale)
+          quiz_id,
+          name,
+          is_active,
+          max_attempts,
+          expires_at,
+          quiz:quizzes(id, title, questions:questions(id, type, prompt, options, correct_answer, rationale))
         `)
-        .eq("id", params.id)
+        .eq("unique_token", params.token)
         .single();
 
-      if (error) throw error;
+      if (linkError || !linkData) {
+        setError("Quiz link not found or invalid");
+        setLoading(false);
+        return;
+      }
 
-      setQuizTitle(data.title);
-      setQuestions(data.questions || []);
+      // Check if link is active
+      if (!linkData.is_active) {
+        setError("This quiz link is no longer active");
+        setLoading(false);
+        return;
+      }
+
+      // Check if link has expired
+      if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) {
+        setError("This quiz link has expired");
+        setLoading(false);
+        return;
+      }
+
+      setQuizLink(linkData);
+      setQuestions(linkData.quiz.questions || []);
     } catch (error) {
-      console.error("Error loading quiz:", error);
+      console.error("Error loading quiz link:", error);
+      setError("Failed to load quiz");
     } finally {
       setLoading(false);
     }
@@ -89,25 +100,19 @@ export default function QuizPage({ params }: { params: { id: string } }) {
       return;
     }
 
+    if (!quizLink) return;
+
     setSubmitting(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        alert("Please sign in");
-        return;
-      }
-
-      // Create attempt (include assignment_id if available)
+      // Create anonymous attempt (user_id can be NULL for anonymous)
       const { data: attempt, error: attemptError } = await supabase
         .from("attempts")
         .insert({
-          quiz_id: params.id,
-          user_id: user.id,
-          assignment_id: assignmentId || null,
+          quiz_id: quizLink.quiz_id,
+          user_id: null, // NULL for anonymous attempts
+          link_token: params.token,
+          is_anonymous: true,
         })
         .select()
         .single();
@@ -151,13 +156,29 @@ export default function QuizPage({ params }: { params: { id: string } }) {
     );
   }
 
+  if (error || !quizLink) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h1 className="text-2xl font-bold mb-4">Error</h1>
+            <p className="text-gray-600">{error || "Quiz not found"}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-4xl mx-auto px-4">
-        <Link href="/quizzes" className="text-blue-600 hover:underline mb-4 inline-block">
-          ← Back to Quizzes
-        </Link>
-        <h1 className="text-3xl font-bold mb-8">{quizTitle}</h1>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <p className="text-blue-800">
+            You are taking this quiz anonymously via a shareable link.
+          </p>
+        </div>
+
+        <h1 className="text-3xl font-bold mb-8">{quizLink.quiz.title}</h1>
 
         <div className="space-y-6">
           {questions.map((question, index) => (
