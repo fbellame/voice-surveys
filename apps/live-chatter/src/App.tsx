@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Room from "./pages/Room";
 import SurveyPage from "./pages/SurveyPage";
+import QuizPage from "./pages/QuizPage";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/room" element={<Room />} />
           <Route path="/survey/:surveySlug" element={<SurveyPage />} />
+          <Route path="/quiz/:quizToken" element={<QuizPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

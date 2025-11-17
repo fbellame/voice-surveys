@@ -29,18 +29,22 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log("Received grading request");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const body: GradeRequest = await req.json();
+    console.log("Request body:", JSON.stringify(body, null, 2));
 
     const { attempt_id } = body;
 
     if (!attempt_id) {
+      console.error("Missing attempt_id");
       return new Response(
         JSON.stringify({ error: "attempt_id is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    console.log("Fetching attempt with id:", attempt_id);
     // Get attempt with answers
     const { data: attempt, error: attemptError } = await supabase
       .from("attempts")
@@ -52,7 +56,13 @@ Deno.serve(async (req: Request) => {
       .eq("id", attempt_id)
       .single();
 
+    console.log("Attempt query result:", { 
+      attempt: attempt ? { id: attempt.id, quiz_id: attempt.quiz_id, answers_count: attempt.answers?.length } : null,
+      attemptError 
+    });
+
     if (attemptError || !attempt) {
+      console.error("Attempt not found:", attemptError);
       return new Response(
         JSON.stringify({ error: "Attempt not found", details: attemptError }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -60,11 +70,13 @@ Deno.serve(async (req: Request) => {
     }
 
     const answers = attempt.answers || [];
+    console.log(`Grading ${answers.length} answers`);
     let correctCount = 0;
     const gradedAnswers = [];
 
     // Grade each answer
     for (const answer of answers) {
+      console.log(`Grading answer ${answer.id} for question ${answer.question_id}`);
       const question = answer.question;
       if (!question) continue;
 
@@ -145,8 +157,10 @@ Deno.serve(async (req: Request) => {
     // Calculate score
     const totalQuestions = answers.length;
     const scorePercentage = totalQuestions > 0 ? (correctCount / totalQuestions) * 100 : 0;
+    console.log(`Grading complete: ${correctCount}/${totalQuestions} correct (${scorePercentage.toFixed(2)}%)`);
 
     // Update attempt
+    console.log("Updating attempt with score");
     const { error: updateAttemptError } = await supabase
       .from("attempts")
       .update({
@@ -161,6 +175,8 @@ Deno.serve(async (req: Request) => {
 
     if (updateAttemptError) {
       console.error("Error updating attempt:", updateAttemptError);
+    } else {
+      console.log("Attempt updated successfully");
     }
 
     return new Response(
@@ -176,10 +192,16 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error grading attempt:", error);
+    console.error("Error stack:", error?.stack);
+    console.error("Error details:", JSON.stringify(error, null, 2));
     return new Response(
-      JSON.stringify({ error: "Internal server error", details: error.message }),
+      JSON.stringify({ 
+        error: "Internal server error", 
+        details: error?.message || String(error),
+        type: error?.constructor?.name
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

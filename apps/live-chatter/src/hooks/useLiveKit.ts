@@ -55,21 +55,37 @@ export function useLiveKit() {
       
       switch (data.type) {
         case 'survey_progress':
-          setSurveyProgress(prev => ({
-            ...prev,
-            currentQuestionNumber: data.current_question_number,
-            currentQuestionText: data.current_question_text,
-            totalQuestions: data.total_questions,
-            answeredQuestions: data.answered_questions,
-            lastAnswer: data.last_answer,
-            completionPercentage: data.completion_percentage || 0,
-            isLessonMode: data.is_lesson_mode || prev.isLessonMode || false,
-            isQuizQuestion: data.is_quiz_question || false,
-            lastAnswerCorrect: data.last_answer_correct,
-            pointsEarned: data.points_earned ?? prev.pointsEarned ?? 0,
-            totalPoints: data.total_points ?? prev.totalPoints ?? 0,
-            correctAnswers: data.correct_answers ?? prev.correctAnswers ?? 0
-          }));
+          console.log('📊 Survey progress update received:', {
+            current_question_number: data.current_question_number,
+            current_question_text: data.current_question_text,
+            total_questions: data.total_questions,
+            answered_questions: data.answered_questions,
+            last_answer: data.last_answer
+          });
+          setSurveyProgress(prev => {
+            const updated = {
+              ...prev,
+              currentQuestionNumber: data.current_question_number,
+              currentQuestionText: data.current_question_text,
+              totalQuestions: data.total_questions,
+              answeredQuestions: data.answered_questions,
+              lastAnswer: data.last_answer,
+              completionPercentage: data.completion_percentage || 0,
+              isLessonMode: data.is_lesson_mode || prev.isLessonMode || false,
+              isQuizQuestion: data.is_quiz_question || false,
+              lastAnswerCorrect: data.last_answer_correct,
+              pointsEarned: data.points_earned ?? prev.pointsEarned ?? 0,
+              totalPoints: data.total_points ?? prev.totalPoints ?? 0,
+              correctAnswers: data.correct_answers ?? prev.correctAnswers ?? 0
+            };
+            console.log('📊 Survey progress state updated:', {
+              currentQuestionNumber: updated.currentQuestionNumber,
+              currentQuestionText: updated.currentQuestionText,
+              answeredQuestions: updated.answeredQuestions,
+              totalQuestions: updated.totalQuestions
+            });
+            return updated;
+          });
           break;
           
         case 'transcript_update':
@@ -93,12 +109,32 @@ export function useLiveKit() {
           
         case 'quiz_feedback':
           // Lesson-specific feedback for quiz answers
+          console.log('📝 Quiz feedback received:', {
+            question_number: data.question_number,
+            is_correct: data.is_correct,
+            user_answer: data.user_answer,
+            correct_answer: data.correct_answer
+          });
           setSurveyProgress(prev => ({
             ...prev,
             lastAnswerCorrect: data.is_correct,
             pointsEarned: data.points_earned ?? prev.pointsEarned ?? 0,
             correctAnswers: data.correct_answers ?? prev.correctAnswers ?? 0,
             encouragementMessage: data.feedback || data.message
+          }));
+          break;
+          
+        case 'quiz_recap':
+          console.log('📊 Quiz recap received:', {
+            total_questions: data.total_questions,
+            correct_answers: data.correct_answers,
+            score_percentage: data.score_percentage,
+            questions: data.questions?.length
+          });
+          setSurveyProgress(prev => ({
+            ...prev,
+            quizRecap: data,
+            status: 'completed'
           }));
           break;
           
@@ -133,7 +169,23 @@ export function useLiveKit() {
   }, []);
 
   const joinRoom = useCallback(async (roomName: string, userName: string, token?: string) => {
-    if (isConnecting || isConnected) return;
+    // If already connecting or connected to a different room, disconnect first
+    if (isConnecting) {
+      console.log('Already connecting, waiting...');
+      return;
+    }
+    
+    if (isConnected && room) {
+      console.log('Already connected, disconnecting from current room first...');
+      await room.disconnect();
+      setRoom(null);
+      setIsConnected(false);
+      setLocalParticipant(null);
+      setParticipants([]);
+      clearSurveyData();
+      // Wait a bit for cleanup
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
 
     setIsConnecting(true);
     setError(null);
@@ -176,7 +228,11 @@ export function useLiveKit() {
       });
 
       // Speaking detection
-      newRoom.on(RoomEvent.ActiveSpeakersChanged, () => {
+      newRoom.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        console.log('Active speakers changed:', speakers.map(s => ({
+          identity: s.identity,
+          audioLevel: s.audioLevel
+        })));
         updateParticipants(newRoom);
       });
 
@@ -196,15 +252,44 @@ export function useLiveKit() {
 
       // Handle track subscriptions for audio playback
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        console.log('Track subscribed:', {
+          kind: track.kind,
+          participant: participant.identity,
+          trackName: track.name,
+          source: track.source
+        });
         if (track.kind === Track.Kind.Audio) {
           const audioElement = track.attach();
           audioElement.play().catch(console.error);
+          console.log('Audio track attached and playing for participant:', participant.identity);
         }
         updateParticipants(newRoom);
       });
 
       newRoom.on(RoomEvent.TrackUnsubscribed, () => {
         updateParticipants(newRoom);
+      });
+
+      // Handle track published events (when local participant publishes)
+      newRoom.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
+        console.log('Local track published:', {
+          kind: publication.kind,
+          trackName: publication.trackName,
+          source: publication.source,
+          participant: participant.identity
+        });
+        if (publication.kind === Track.Kind.Audio) {
+          console.log('Local audio track published successfully - agent should be able to receive audio');
+        }
+      });
+
+      // Handle track unpublished events
+      newRoom.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
+        console.log('Local track unpublished:', {
+          kind: publication.kind,
+          trackName: publication.trackName,
+          participant: participant.identity
+        });
       });
 
       // *** NEW: Handle data messages from agent ***
@@ -228,9 +313,34 @@ export function useLiveKit() {
 
       // Connect to room
       await newRoom.connect(LIVEKIT_CONFIG.LIVEKIT_URL, token);
+      console.log('Connected to LiveKit room:', roomName);
       
       // Enable audio by default
-      await newRoom.localParticipant.setMicrophoneEnabled(true);
+      try {
+        await newRoom.localParticipant.setMicrophoneEnabled(true);
+        console.log('Microphone enabled successfully');
+        
+        // Check if audio track is published (with safety check)
+        if (newRoom.localParticipant && newRoom.localParticipant.audioTracks) {
+          const audioTracks = Array.from(newRoom.localParticipant.audioTracks.values());
+          console.log('Audio tracks published:', audioTracks.length);
+          if (audioTracks.length > 0) {
+            console.log('Audio track details:', {
+              kind: audioTracks[0].kind,
+              source: audioTracks[0].source,
+              isMuted: audioTracks[0].isMuted,
+              trackName: audioTracks[0].trackName
+            });
+          } else {
+            console.warn('WARNING: No audio tracks published after enabling microphone');
+          }
+        } else {
+          console.warn('WARNING: audioTracks not available yet, may be initialized later');
+        }
+      } catch (micError) {
+        console.error('Error enabling microphone:', micError);
+        throw micError;
+      }
       
       setRoom(newRoom);
     } catch (err) {

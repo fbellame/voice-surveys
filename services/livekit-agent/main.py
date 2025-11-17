@@ -20,13 +20,8 @@ import re
 from user_data import UserData
 from recording import start_s3_recording
 
-# --- API integration imports ---
-from api_client import (
-    update_submission_s3_url_api, get_existing_answers_api,
-    cleanup_api_client, submit_quiz_answer_api, create_lesson_performance_api,
-    get_lesson_by_uri_and_token, get_lesson_by_id, record_lesson_submission_api,
-    get_existing_lesson_submission_api
-)
+# --- Supabase integration imports ---
+from supabase_client import quiz_client
 
 # from datadog import initialize, statsd
 
@@ -126,16 +121,16 @@ def update_health_status(status):
 
 RunContext_T = RunContext[UserData]
 
-# API-based operations - all database calls now go through the API client
+# Supabase-based operations - all database calls now go through the Supabase client
 
-def build_dynamic_prompt_from_lesson_data(lesson_data):
-    """Build dynamic prompt from lesson data received from API."""
-    logger.debug(f"Building dynamic prompt from lesson data: {lesson_data}")
+def build_dynamic_prompt_from_quiz_data(quiz_data):
+    """Build dynamic prompt from quiz data received from Supabase."""
+    logger.debug(f"Building dynamic prompt from quiz data: {quiz_data}")
 
-    lesson = lesson_data.get("lesson", {})
-    questions = lesson_data.get("questions", [])
+    quiz = quiz_data.get("quiz", {})
+    questions = quiz_data.get("questions", [])
 
-    logger.debug(f"Lesson data: {lesson}")
+    logger.debug(f"Quiz data: {quiz}")
     logger.debug(f"Questions data: {questions}")
     logger.debug(f"Number of questions: {len(questions)}")
 
@@ -145,7 +140,7 @@ def build_dynamic_prompt_from_lesson_data(lesson_data):
         qid = question.get("id")
         qtext = question.get("question_text")
         qorder = question.get("question_order")
-        is_quiz = question.get("is_quiz_question", False)
+        is_quiz = question.get("is_quiz_question", True)  # All quiz questions are quiz questions
         correct_answer = question.get("correct_answer")
         points = question.get("points", 1)
         logger.debug(f"Processing question {i+1}: id={qid}, order={qorder}, text='{qtext}', is_quiz={is_quiz}")
@@ -155,8 +150,13 @@ def build_dynamic_prompt_from_lesson_data(lesson_data):
         else:
             questions_section += f"\n{qorder}) Question {qorder}:\n   \"{qtext}\"\n"
 
-    purpose_explanation = lesson.get('purpose_explanation', 'Welcome! I am here to help you learn through an interactive quiz.')
-    intro_prompt = lesson.get('intro_prompt', 'You are a friendly and encouraging AI voice teacher helping a student learn through interactive quizzes.')
+    purpose_explanation = quiz.get('purpose_explanation', 'Welcome! I am here to help you learn through an interactive quiz.')
+    intro_prompt = quiz.get('intro_prompt', 'You are a friendly and encouraging AI voice teacher helping a student learn through interactive quizzes.')
+    
+    # Get first question text for the prompt
+    first_question_text = ""
+    if questions and len(questions) > 0:
+        first_question_text = questions[0].get('question_text', '')
     
     prompt = f"""
 {intro_prompt}
@@ -177,8 +177,16 @@ You are a supportive and encouraging teacher. Your role is to:
 
 LESSON FLOW (ask only one question at a time)
 
-1) Welcome and explain purpose:
-   {purpose_explanation}
+IMPORTANT: After saying the welcome message, IMMEDIATELY ask the first question without waiting for the participant to respond. Do not pause or wait - go straight from the welcome to asking Question 1.
+
+CRITICAL: When asking ANY question, you MUST call the ask_question function FIRST with the question number BEFORE saying the question text. This updates the frontend to show the correct question.
+
+1) Welcome and explain purpose, then IMMEDIATELY ask Question 1:
+   Say: "{purpose_explanation}" 
+   Then call ask_question with question_number="1" FIRST
+   Then IMMEDIATELY ask: "{first_question_text}"
+   Do not wait for a response - ask the question right away.
+
 {questions_section}
 {len(questions) + 3}) Completion check:
    After the recap, call check_survey_complete to ensure all questions were answered.
@@ -189,10 +197,17 @@ LESSON FLOW (ask only one question at a time)
 
 QUIZ EVALUATION
 - For each quiz question, use evaluate_quiz_answer to check if the answer is correct
+- ALWAYS wait for the participant to provide their answer before evaluating
+- When you hear the participant speak after asking a question, that is their answer - process it immediately
+- IMPORTANT: You MUST actively listen for the participant's response. The system will transcribe their speech automatically.
+- When you receive ANY speech input from the participant after asking a question, treat it as their answer and process it immediately using evaluate_quiz_answer
+- Do not wait for silence or pause - process the answer as soon as you receive it
 - Always provide positive feedback, even for incorrect answers
 - For correct answers: Celebrate enthusiastically and explain why it's correct
 - For incorrect answers: Be supportive, provide hints, and encourage them to try again if appropriate
 - Track performance and provide encouragement throughout
+- After evaluating an answer, ask the next question (if there are more questions)
+- CRITICAL: When asking the next question, you MUST call ask_question with the question number FIRST, then say the question text
 
 DATA PROTECTION
 - Each answer is automatically saved to the database as soon as it's captured.
@@ -201,21 +216,38 @@ DATA PROTECTION
 
 GENERAL GUIDELINES
 Ask only one question at a time.
+CRITICAL: Before asking ANY question, you MUST call ask_question with the question number FIRST. This ensures the frontend displays the correct question.
+After asking a question, ALWAYS wait for and listen to the participant's response.
+When the participant speaks, process their answer immediately using the appropriate tools.
+The speech-to-text system will automatically transcribe what the participant says - you will receive their words as text.
+When you receive text input from the participant after asking a question, that is their answer - process it immediately.
 Respond in clear, complete sentences with enthusiasm and encouragement.
 Be patient and supportive - learning takes time.
 If the participant provides unexpected information, politely steer them back to the current question.
 Always maintain a positive, encouraging tone.
+
+CRITICAL LISTENING INSTRUCTIONS:
+1. Before asking any question, you MUST call ask_question with the question number FIRST
+2. After asking any question, you MUST wait for the participant to respond
+3. The system will automatically transcribe their speech and send it to you as text
+4. As soon as you receive ANY text input from the participant after asking a question, treat it as their answer
+5. Immediately call evaluate_quiz_answer with the question number and their answer text
+6. Do not continue speaking or ask another question until you have received and processed their answer
+7. Listen actively - the participant's speech will appear as text in your conversation
 """
-    return prompt, lesson, questions
+    return prompt, quiz, questions
 
 # --- New functions for real-time progress tracking ---
 async def send_progress_update(ctx: RunContext_T, current_question: str = None, last_answer: str = None, current_question_text: str = None):
     """Send progress update to frontend via data channel"""
     userdata = ctx.userdata
 
+    # Ensure current_question is always a string (convert None to None but keep as string for JSON)
+    current_question_str = str(current_question) if current_question is not None else None
+
     progress_data = {
         "type": "survey_progress",
-        "current_question_number": current_question,
+        "current_question_number": current_question_str,
         "current_question_text": current_question_text,
         "total_questions": len(userdata.questions),
         "answered_questions": len(userdata.questionnaire_answers),
@@ -223,6 +255,8 @@ async def send_progress_update(ctx: RunContext_T, current_question: str = None, 
         "completion_percentage": round((len(userdata.questionnaire_answers) / len(userdata.questions)) * 100, 1) if userdata.questions else 0,
         "timestamp": datetime.now().isoformat()
     }
+    
+    logger.info(f"Sending progress update: question={current_question_str}, answered={len(userdata.questionnaire_answers)}, total={len(userdata.questions)}")
 
     try:
         # Use the room stored in userdata (set from JobContext)
@@ -277,15 +311,97 @@ async def send_survey_status(ctx: RunContext_T, status: str, message: str = ""):
     except Exception as e:
         logger.error(f"Failed to send survey status: {e}")
 
+async def send_quiz_recap(ctx: RunContext_T, userdata: UserData, attempt_data: dict = None):
+    """Send quiz recap with score, all answers, and correct answers to frontend"""
+    try:
+        if not hasattr(userdata, 'room') or not userdata.room:
+            logger.warning("Room not available, cannot send quiz recap")
+            return
+        
+        # Build recap data from userdata and attempt_data
+        total_questions = len(userdata.questions)
+        correct_count = userdata.correct_count
+        score_percentage = round((correct_count / total_questions * 100), 1) if total_questions > 0 else 0
+        
+        # Build question recap list
+        recap_questions = []
+        for question in userdata.questions:
+            q_order = question.get("question_order")
+            q_num = str(q_order)
+            
+            # Get user's answer
+            user_answer = userdata.questionnaire_answers.get(q_num, "No answer provided")
+            
+            # Get correct answer
+            correct_answer = question.get("correct_answer")
+            if isinstance(correct_answer, dict):
+                # Handle structured answers (e.g., MCQ options)
+                correct_answer = correct_answer.get("value") or str(correct_answer)
+            correct_answer_str = str(correct_answer) if correct_answer else "N/A"
+            
+            # Check if correct (use local evaluation)
+            is_correct = False
+            if correct_answer:
+                is_correct = evaluate_answer_correctness(user_answer, str(correct_answer))
+            
+            # Get answer details from attempt_data if available (for graded results)
+            points_earned = 0
+            if attempt_data and attempt_data.get("answers"):
+                for answer_data in attempt_data["answers"]:
+                    answer_question = answer_data.get("question", {})
+                    if answer_question.get("question_order") == q_order:
+                        points_earned = answer_data.get("points_earned", 1 if is_correct else 0)
+                        # Use graded result if available
+                        if answer_data.get("is_correct") is not None:
+                            is_correct = answer_data.get("is_correct", False)
+                        break
+            
+            recap_questions.append({
+                "question_number": q_num,
+                "question_text": question.get("question_text", ""),
+                "user_answer": user_answer,
+                "correct_answer": correct_answer_str,
+                "is_correct": is_correct,
+                "points_earned": points_earned,
+                "rationale": question.get("rationale", "")
+            })
+        
+        # Sort by question order
+        recap_questions.sort(key=lambda x: int(x["question_number"]))
+        
+        # Build recap data
+        recap_data = {
+            "type": "quiz_recap",
+            "total_questions": total_questions,
+            "correct_answers": correct_count,
+            "incorrect_answers": total_questions - correct_count,
+            "score_percentage": score_percentage,
+            "points_earned": sum(q.get("points_earned", 0) for q in recap_questions),
+            "total_points": total_questions,
+            "questions": recap_questions,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Send recap to frontend
+        recap_payload = json.dumps(recap_data).encode('utf-8')
+        await userdata.room.local_participant.publish_data(recap_payload, reliable=True)
+        logger.info(f"Quiz recap sent: {correct_count}/{total_questions} correct ({score_percentage}%)")
+        
+    except Exception as e:
+        logger.error(f"Failed to send quiz recap: {e}")
+
 
 class MainAgent(Agent):
-    def __init__(self, lesson_data) -> None:
-        MAIN_PROMPT, self.lesson, self.questions = build_dynamic_prompt_from_lesson_data(lesson_data)
-        logger.info(f"MainAgent initialized for lesson '{self.lesson.get('name', 'Unknown')}' with dynamic prompt: %s", MAIN_PROMPT)
+    def __init__(self, quiz_data) -> None:
+        MAIN_PROMPT, self.quiz, self.questions = build_dynamic_prompt_from_quiz_data(quiz_data)
+        # Keep lesson for backward compatibility
+        self.lesson = self.quiz
+        logger.info(f"MainAgent initialized for quiz '{self.quiz.get('name', 'Unknown')}' with dynamic prompt: %s", MAIN_PROMPT)
         self.conversation_log = []  # Track conversation for transcript
+        self.current_question_number = 1  # Track current question number
         
-        # Include quiz evaluation tool for lessons
-        tools = [set_questionnaire_answer, check_survey_complete, watchdog_survey_completion, evaluate_quiz_answer]
+        # Include quiz evaluation tool for quizzes
+        tools = [set_questionnaire_answer, check_survey_complete, watchdog_survey_completion, evaluate_quiz_answer, ask_question]
         
         super().__init__(
             instructions=MAIN_PROMPT,
@@ -294,16 +410,39 @@ class MainAgent(Agent):
         )
 
     async def on_enter(self) -> None:
-        greeting = self.lesson.get("greeting") or "Hello, welcome to your lesson!"
-        await self.session.say(greeting, allow_interruptions=False)
+        greeting = self.quiz.get("greeting") or "Hello, welcome to your quiz!"
+        purpose_explanation = self.quiz.get("purpose_explanation", "Welcome! I am here to help you learn through an interactive quiz.")
+        
+        # Combine greeting and purpose explanation
+        welcome_message = f"{greeting} {purpose_explanation}"
+        await self.session.say(welcome_message, allow_interruptions=False)
+        
+        # Immediately ask the first question after greeting
+        if self.questions and len(self.questions) > 0:
+            first_question = self.questions[0]
+            question_text = first_question.get("question_text", "")
+            if question_text:
+                # Ask the first question immediately with interruptions allowed
+                # After saying the question, the agent will automatically listen for user response
+                await self.session.say(f"Let's begin with the first question. {question_text}", allow_interruptions=True)
+                # Log that we're now waiting for user response
+                logger.info(f"First question asked, now waiting for user response: {question_text}")
+                logger.info("Agent is now in listening mode - any user speech will be processed automatically")
 
         # Note: We'll send initial progress updates after session is fully initialized
         # The session context will be available in the tools once the session starts
+        # The agent will automatically process user speech through STT and LLM after on_enter completes
+        # The LiveKit Agent framework will automatically:
+        # 1. Detect user speech via VAD (Voice Activity Detection)
+        # 2. Transcribe it via STT (Speech-to-Text)
+        # 3. Send the transcribed text to the LLM
+        # 4. The LLM will process it according to the instructions in the prompt
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
-# --- Updated to use API ---
+# --- Legacy function (not used in quiz system) ---
+# Kept for backward compatibility but not called in quiz flow
 async def save_userdata_to_api(userdata: UserData, campaign_id: int, submission_id: str):
     # Save S3 recording URL if present (skip for fallback submission ID)
     if getattr(userdata, 's3_recording_url', None) and submission_id != "fallback-submission-id":
@@ -363,9 +502,9 @@ async def save_userdata_to_api(userdata: UserData, campaign_id: int, submission_
 
 # --- NEW FUNCTION: Submit individual answer incrementally ---
 async def submit_single_answer(userdata: UserData, question_number: str, answer: str) -> bool:
-    """Submit a single answer to the API immediately after capture"""
-    if userdata.submission_id == "fallback-submission-id":
-        logger.warning(f"Cannot submit answer for question {question_number} - using fallback submission ID")
+    """Submit a single answer to Supabase immediately after capture"""
+    if not userdata.submission_id or userdata.submission_id == "fallback-attempt-id":
+        logger.warning(f"Cannot submit answer for question {question_number} - invalid attempt ID")
         return False
 
     # Check if this answer was already submitted
@@ -382,27 +521,24 @@ async def submit_single_answer(userdata: UserData, question_number: str, answer:
 
     if not question_id:
         logger.error(f"Question ID not found for question order {question_number}")
-        # statsd.increment("survey.errors", tags=["type:question_id_not_found"])
         return False
 
     try:
-        from api_client import api_client
-        answer_data = {
-            "question_id": question_id,
-            "answer_text": answer
-        }
-
-        await api_client.submit_answers(userdata.submission_id, [answer_data])
-        userdata.submitted_answers.add(question_number)
-        logger.info(f"Successfully submitted answer for question {question_number} to API")
+        success = await quiz_client.create_answer(
+            attempt_id=userdata.submission_id,
+            question_id=question_id,
+            user_answer=answer
+        )
         
-        # Track individual question answers
-        # statsd.increment("survey.questions.answered")
-        
-        return True
+        if success:
+            userdata.submitted_answers.add(question_number)
+            logger.info(f"Successfully submitted answer for question {question_number} to Supabase")
+            return True
+        else:
+            logger.error(f"Failed to submit answer for question {question_number}")
+            return False
     except Exception as e:
-        logger.error(f"Failed to submit answer for question {question_number} to API: {e}")
-        # statsd.increment("survey.errors", tags=["type:api_submission"])
+        logger.error(f"Failed to submit answer for question {question_number} to Supabase: {e}")
         return False
 
 # --- NEW FUNCTION: Finalization with disconnect protection ---
@@ -459,49 +595,40 @@ async def finalize_survey_with_protection(userdata: UserData, ctx: RunContext_T)
         # statsd.increment("survey.errors", tags=["type:finalization"])
         return False
 
-    # Mark lesson as completed
+    # Mark quiz as completed
     userdata.survey_completed = True
-    logger.info(f"Lesson marked as completed - all {total_questions} answers submitted to API")
+    logger.info(f"Quiz marked as completed - all {total_questions} answers submitted to Supabase")
 
-    # Create lesson performance record
-    if userdata.submission_id != "fallback-submission-id":
+    # Grade the attempt using the grade edge function
+    if userdata.submission_id and userdata.submission_id != "fallback-attempt-id":
         try:
-            # Calculate performance metrics
-            quiz_questions = [q for q in userdata.questions if q.get("is_quiz_question", False)]
-            total_quiz_questions = len(quiz_questions)
-            correct_answers = userdata.correct_count
-            total_points = userdata.total_points_possible
-            points_earned = userdata.total_points_earned
+            logger.info(f"Calling grade function for attempt {userdata.submission_id}")
+            grade_success = await quiz_client.grade_attempt(userdata.submission_id)
             
-            # Calculate score percentage
-            score_percentage = 0.0
-            if total_points > 0:
-                score_percentage = (points_earned / total_points) * 100.0
-            
-            # Create lesson performance record
-            lesson_id = userdata.lesson.get("id")
-            if lesson_id:
-                performance_success = await create_lesson_performance_api(
-                    submission_id=userdata.submission_id,
-                    lesson_id=lesson_id,
-                    total_questions=total_quiz_questions if total_quiz_questions > 0 else total_questions,
-                    correct_answers=correct_answers,
-                    total_points=total_points if total_points > 0 else total_questions,
-                    points_earned=points_earned,
-                    score_percentage=score_percentage
-                )
-                if performance_success:
-                    logger.info(f"Lesson performance record created: {correct_answers}/{total_quiz_questions} correct, {points_earned}/{total_points} points, {score_percentage:.1f}%")
-                else:
-                    logger.warning("Failed to create lesson performance record")
+            if grade_success:
+                logger.info(f"Successfully graded attempt {userdata.submission_id}")
+            else:
+                logger.warning(f"Failed to grade attempt {userdata.submission_id} - answers are saved but not graded")
         except Exception as e:
-            logger.error(f"Error creating lesson performance record: {e}")
+            logger.error(f"Error calling grade function: {e}")
+            # Don't fail finalization if grading fails - answers are already saved
 
     # Count total surveys completed
     # statsd.increment("survey.completed")
 
+    # Get attempt with all answers for recap
+    attempt_data = None
+    if userdata.submission_id and userdata.submission_id != "fallback-attempt-id":
+        try:
+            attempt_data = await quiz_client.get_attempt_with_answers(userdata.submission_id)
+        except Exception as e:
+            logger.error(f"Failed to get attempt data for recap: {e}")
+    
+    # Send recap to frontend
+    await send_quiz_recap(ctx, userdata, attempt_data)
+    
     # Send completion status
-    await send_survey_status(ctx, "completed", "Lesson successfully completed and saved via API")
+    await send_survey_status(ctx, "completed", "Quiz successfully completed and graded")
 
     # Send final progress update
     await send_progress_update(ctx, current_question=None, last_answer=None)
@@ -541,9 +668,9 @@ def evaluate_answer_correctness(student_answer: str, correct_answer: str) -> boo
 
 # --- Quiz answer submission with evaluation ---
 async def submit_quiz_answer(userdata: UserData, question_number: str, answer: str) -> dict:
-    """Submit a quiz answer with evaluation and scoring"""
-    if userdata.submission_id == "fallback-submission-id":
-        logger.warning(f"Cannot submit quiz answer for question {question_number} - using fallback submission ID")
+    """Submit a quiz answer to Supabase - grading will be done by edge function"""
+    if not userdata.submission_id or userdata.submission_id == "fallback-submission-id":
+        logger.warning(f"Cannot submit quiz answer for question {question_number} - invalid submission ID")
         return {"success": False, "is_correct": False, "points": 0}
     
     # Find question details
@@ -559,72 +686,35 @@ async def submit_quiz_answer(userdata: UserData, question_number: str, answer: s
         logger.error(f"Question ID not found for question order {question_number}")
         return {"success": False, "is_correct": False, "points": 0}
     
-    # Evaluate answer if it's a quiz question
-    is_quiz = question_data.get("is_quiz_question", False)
-    correct_answer = question_data.get("correct_answer")
-    points_possible = question_data.get("points", 1)
-    
-    is_correct = False
-    points_earned = 0
-    feedback = None
-    
-    if is_quiz and correct_answer:
-        is_correct = evaluate_answer_correctness(answer, correct_answer)
-        if is_correct:
-            points_earned = points_possible
-            feedback = f"Correct! Well done! The answer is: {correct_answer}"
-        else:
-            points_earned = 0
-            feedback = f"Not quite. The correct answer is: {correct_answer}. Keep trying, you're learning!"
-    
-    # Store in quiz_answers
-    userdata.quiz_answers[question_number] = {
-        "answer": answer,
-        "is_correct": is_correct,
-        "points": points_earned
-    }
-    
-    # Update totals
-    if is_quiz:
-        userdata.total_points_earned += points_earned
-        userdata.total_points_possible += points_possible
-        if is_correct:
-            userdata.correct_count += 1
-    
-    # Submit to API
+    # Store answer in Supabase
     try:
-        if is_quiz:
-            success = await submit_quiz_answer_api(
-                userdata.submission_id,
-                question_id,
-                answer,
-                is_correct,
-                points_earned,
-                feedback,
-                is_lesson=userdata.is_lesson_mode
-            )
-        else:
-            # Regular answer submission
-            from api_client import api_client
-            answer_data = {
-                "question_id": question_id,
-                "answer_text": answer
-            }
-            await api_client.submit_answers(userdata.submission_id, [answer_data])
-            success = True
+        success = await quiz_client.create_answer(
+            attempt_id=userdata.submission_id,
+            question_id=question_id,
+            user_answer=answer
+        )
         
         if success:
-            logger.info(f"Quiz answer for question {question_number} submitted: correct={is_correct}, points={points_earned}")
+            # Store locally for tracking
+            userdata.quiz_answers[question_number] = {
+                "answer": answer,
+                "question_id": question_id
+            }
+            userdata.submitted_answers.add(question_number)
+            
+            logger.info(f"Quiz answer for question {question_number} submitted to Supabase")
             return {
                 "success": True,
-                "is_correct": is_correct,
-                "points": points_earned,
-                "feedback": feedback
+                "is_correct": None,  # Will be determined by grade function
+                "points": None,
+                "feedback": "Answer saved. Evaluation will be done after completion."
             }
+        else:
+            logger.error(f"Failed to submit answer for question {question_number}")
+            return {"success": False, "is_correct": False, "points": 0}
     except Exception as e:
         logger.error(f"Failed to submit quiz answer: {e}")
-    
-    return {"success": False, "is_correct": is_correct, "points": points_earned, "feedback": feedback}
+        return {"success": False, "is_correct": False, "points": 0}
 
 @function_tool
 async def evaluate_quiz_answer(
@@ -635,20 +725,109 @@ async def evaluate_quiz_answer(
     """Evaluate a quiz answer and provide feedback. Use this for quiz questions."""
     userdata = ctx.userdata
     
+    # Store answer in questionnaire_answers for tracking
+    userdata.questionnaire_answers[question_number] = answer
+    
+    # Find question data to check correctness
+    question_data = None
+    correct_answer = None
+    for question in userdata.questions:
+        if question.get("question_order") == int(question_number):
+            question_data = question
+            correct_answer = question.get("correct_answer")
+            break
+    
+    # Check if answer is correct locally (for immediate feedback)
+    is_correct = False
+    if correct_answer:
+        is_correct = evaluate_answer_correctness(answer, str(correct_answer))
+    
     # Submit and evaluate the answer
     result = await submit_quiz_answer(userdata, question_number, answer)
     
-    if result["success"]:
-        if result["is_correct"]:
-            encouragement = "Excellent work! " + result.get("feedback", "That's correct!")
-            userdata.performance_feedback.append(f"Q{question_number}: Correct - {encouragement}")
-            return encouragement
-        else:
-            supportive = "Good effort! " + result.get("feedback", "Let's try the next one.")
-            userdata.performance_feedback.append(f"Q{question_number}: Incorrect - {supportive}")
-            return supportive
+    # Update local tracking with correctness
+    if question_number in userdata.quiz_answers:
+        userdata.quiz_answers[question_number]["is_correct"] = is_correct
     else:
-        return "Answer recorded, but evaluation may be incomplete."
+        userdata.quiz_answers[question_number] = {
+            "answer": answer,
+            "is_correct": is_correct
+        }
+    
+    # Update correct count
+    if is_correct:
+        userdata.correct_count += 1
+    
+    # Find current question text
+    current_question_text = None
+    if question_data:
+        current_question_text = question_data.get("question_text")
+    
+    # Send transcript update for participant answer
+    await send_transcript_update(ctx, answer, "participant")
+    
+    # Send quiz feedback update to frontend with correctness info
+    try:
+        if hasattr(userdata, 'room') and userdata.room:
+            feedback_data = {
+                "type": "quiz_feedback",
+                "question_number": question_number,
+                "is_correct": is_correct,
+                "user_answer": answer,
+                "correct_answer": str(correct_answer) if correct_answer else None,
+                "feedback": "Correct! Well done!" if is_correct else f"Not quite. The correct answer is: {correct_answer}" if correct_answer else "Answer recorded.",
+                "points_earned": 1 if is_correct else 0,
+                "total_points": len(userdata.questions),
+                "correct_answers": userdata.correct_count,
+                "timestamp": datetime.now().isoformat()
+            }
+            feedback_payload = json.dumps(feedback_data).encode('utf-8')
+            await userdata.room.local_participant.publish_data(feedback_payload, reliable=True)
+            logger.info(f"Quiz feedback sent for question {question_number}: correct={is_correct}")
+    except Exception as e:
+        logger.error(f"Failed to send quiz feedback: {e}")
+    
+    # Determine next question number
+    next_question_num = str(int(question_number) + 1)
+    next_question_text = None
+    has_next_question = False
+    
+    # Check if there's a next question
+    if int(question_number) < len(userdata.questions):
+        for question in userdata.questions:
+            if question.get("question_order") == int(next_question_num):
+                next_question_text = question.get("question_text")
+                has_next_question = True
+                break
+    
+    # Send progress update - update to next question if available
+    if has_next_question:
+        await send_progress_update(
+            ctx,
+            current_question=next_question_num,
+            last_answer=answer,
+            current_question_text=next_question_text
+        )
+        logger.info(f"Answer for question {question_number} evaluated. Updated to question {next_question_num} (agent should be asking it now)")
+    else:
+        # No next question, keep current as the one just answered
+        await send_progress_update(
+            ctx,
+            current_question=question_number,
+            last_answer=answer,
+            current_question_text=current_question_text
+        )
+    
+    # Provide verbal feedback
+    if is_correct:
+        encouragement = "Excellent work! That's correct! " + (question_data.get("rationale", "") if question_data else "")
+        userdata.performance_feedback.append(f"Q{question_number}: Correct - {encouragement}")
+        return encouragement
+    else:
+        correct_answer_text = f" The correct answer is: {correct_answer}." if correct_answer else ""
+        supportive = f"Good effort! Not quite right.{correct_answer_text} " + (question_data.get("rationale", "") if question_data else "Let's try the next one.")
+        userdata.performance_feedback.append(f"Q{question_number}: Incorrect - {supportive}")
+        return supportive
 
 @function_tool
 async def set_questionnaire_answer(
@@ -678,12 +857,13 @@ async def set_questionnaire_answer(
             else:
                 logger.warning(f"Failed to submit quiz answer for question {question_number}")
         else:
-            # Regular answer submission for non-quiz questions
-            submission_success = await submit_single_answer(userdata, question_number, answer)
-            if submission_success:
-                logger.info(f"Answer for question {question_number} submitted to API immediately")
+            # All questions in quizzes are quiz questions, so this shouldn't happen
+            # But keep for safety
+            result = await submit_quiz_answer(userdata, question_number, answer)
+            if result["success"]:
+                logger.info(f"Answer for question {question_number} submitted to Supabase immediately")
             else:
-                logger.warning(f"Failed to submit answer for question {question_number} to API - will retry during finalization")
+                logger.warning(f"Failed to submit answer for question {question_number} - will retry during finalization")
     except Exception as e:
         # Track general errors
         # statsd.increment("survey.errors", tags=["type:general"])
@@ -704,23 +884,38 @@ async def set_questionnaire_answer(
     # Send transcript update for participant answer
     await send_transcript_update(ctx, answer, "participant")
 
-    # Determine next question
+    # Determine next question number
     next_question_num = str(int(question_number) + 1)
     next_question_text = None
+    has_next_question = False
 
+    # Check if there's a next question
     if int(question_number) < len(userdata.questions):
         for question in userdata.questions:
             if question.get("question_order") == int(next_question_num):
                 next_question_text = question.get("question_text")
+                has_next_question = True
                 break
 
-    # Send progress update with current answer and next question info
-    await send_progress_update(
-        ctx,
-        current_question=next_question_num if next_question_text else None,
-        last_answer=answer,
-        current_question_text=next_question_text
-    )
+    # Send progress update with current answer
+    # If there's a next question, update to it (agent should be asking it soon)
+    # This is a fallback in case the agent doesn't call ask_question
+    if has_next_question:
+        await send_progress_update(
+            ctx,
+            current_question=next_question_num,
+            last_answer=answer,
+            current_question_text=next_question_text
+        )
+        logger.info(f"Answer for question {question_number} received. Updated to question {next_question_num} (agent should be asking it now)")
+    else:
+        # No next question, keep current as the one just answered
+        await send_progress_update(
+            ctx,
+            current_question=question_number,
+            last_answer=answer,
+            current_question_text=current_question_text
+        )
 
     logger.info(f"Question {question_number} answer set: {answer}")
     logger.info(f"All questionnaire answers: {userdata.questionnaire_answers}")
@@ -728,9 +923,9 @@ async def set_questionnaire_answer(
 
     if len(userdata.questionnaire_answers) == len(userdata.questions):
         await send_survey_status(ctx, "in_progress", "All questions answered, ready for completion")
-        return f"Answer for question {question_number} has been saved and submitted to API. Lesson complete - ready for finalization: {answer}"
+        return f"Answer for question {question_number} has been saved to Supabase. Quiz complete - ready for finalization: {answer}"
     else:
-        return f"Answer for question {question_number} has been saved and submitted to API: {answer}"
+        return f"Answer for question {question_number} has been saved to Supabase: {answer}"
 
 @function_tool
 async def check_survey_complete(ctx: RunContext_T) -> str:
@@ -738,37 +933,28 @@ async def check_survey_complete(ctx: RunContext_T) -> str:
     total_questions = len(userdata.questions)
     answered_questions = len(userdata.questionnaire_answers)
     submitted_questions = len(userdata.submitted_answers)
-    logger.info(f"Lesson completion check: {answered_questions}/{total_questions} questions answered, {submitted_questions}/{total_questions} submitted")
+    logger.info(f"Quiz completion check: {answered_questions}/{total_questions} questions answered, {submitted_questions}/{total_questions} submitted")
 
     if answered_questions == total_questions:
         # Use the new finalization with disconnect protection
         finalization_success = await finalize_survey_with_protection(userdata, ctx)
 
         if finalization_success:
-            logger.info("Lesson completed - all data saved to API with disconnect protection")
+            logger.info("Quiz completed - all data saved to Supabase with disconnect protection")
 
-            # Synchronous finalization step - block until API confirms
-            logger.info("Synchronously confirming lesson completion with API...")
-
-            # Verify all answers are in the database by checking submission status
-            try:
-                from api_client import api_client
-                # This could be enhanced to actually verify the data in the database
-                # For now, we'll just log the confirmation
-                logger.info(f"Lesson submission {userdata.submission_id} confirmed complete with {len(userdata.submitted_answers)} answers")
-            except Exception as e:
-                logger.warning(f"Could not verify lesson completion with API: {e}")
+            # Verify all answers are in the database
+            logger.info(f"Quiz attempt {userdata.submission_id} confirmed complete with {len(userdata.submitted_answers)} answers")
 
             # Automatically end the call after completion
-            closing_message = userdata.lesson.get("closing", "Thank you for completing the lesson. Great job! Goodbye!")
+            closing_message = userdata.lesson.get("closing", "Thank you for completing the quiz. Great job! Goodbye!")
 
             # Say the closing message first
             if hasattr(userdata, 'session') and userdata.session:
                 await userdata.session.say(closing_message, allow_interruptions=False)
 
             # Send closing status and end the call
-            await send_survey_status(ctx, "closing", "Lesson completed, ending call")
-            logger.info("Lesson call ending - closing status sent")
+            await send_survey_status(ctx, "closing", "Quiz completed, ending call")
+            logger.info("Quiz call ending - closing status sent")
 
             # End the session using the correct method
             if hasattr(userdata, 'session') and userdata.session:
@@ -778,31 +964,60 @@ async def check_survey_complete(ctx: RunContext_T) -> str:
                     logger.warning(f"Error closing session: {e}")
                     # Session may already be closed or closing, which is fine
 
-            return f"Lesson complete! Said closing message and ended the call."
+            return f"Quiz complete! Said closing message and ended the call."
         else:
-            logger.error("Failed to finalize lesson - data may be lost")
-            await send_survey_status(ctx, "error", "Failed to save lesson data")
-            return f"Lesson completion failed - please try again."
+            logger.error("Failed to finalize quiz - data may be lost")
+            await send_survey_status(ctx, "error", "Failed to save quiz data")
+            return f"Quiz completion failed - please try again."
     else:
         missing_questions = [str(question.get("question_order")) for question in userdata.questions if str(question.get("question_order")) not in userdata.questionnaire_answers]
-        await send_survey_status(ctx, "in_progress", f"Lesson incomplete. Missing questions: {missing_questions}")
-        return f"Lesson is not complete. {answered_questions}/{total_questions} questions answered. Missing questions: {missing_questions}"
+        await send_survey_status(ctx, "in_progress", f"Quiz incomplete. Missing questions: {missing_questions}")
+        return f"Quiz is not complete. {answered_questions}/{total_questions} questions answered. Missing questions: {missing_questions}"
+
+@function_tool
+async def ask_question(
+    question_number: Annotated[str, Field(description="The question number being asked (e.g., '1', '2', '3')")],
+    ctx: RunContext_T
+) -> str:
+    """Call this function when you are asking a question to the participant. This updates the frontend to show the correct question."""
+    userdata = ctx.userdata
+    
+    # Find the question text for this question number
+    question_text = None
+    for question in userdata.questions:
+        if question.get("question_order") == int(question_number):
+            question_text = question.get("question_text")
+            break
+    
+    if question_text:
+        # Send progress update with the question being asked
+        await send_progress_update(
+            ctx,
+            current_question=question_number,
+            last_answer=None,  # No answer yet for this question
+            current_question_text=question_text
+        )
+        logger.info(f"Question {question_number} asked - progress update sent: {question_text}")
+        return f"Question {question_number} progress update sent to frontend"
+    else:
+        logger.warning(f"Question {question_number} not found in questions list")
+        return f"Question {question_number} not found"
 
 @function_tool
 async def end_call(ctx: RunContext_T) -> str:
-    """End the lesson call after sending closing status"""
+    """End the quiz call after sending closing status"""
     userdata = ctx.userdata
 
     # Send closing status to indicate the call is ending
-    await send_survey_status(ctx, "closing", "Lesson completed, ending call")
+    await send_survey_status(ctx, "closing", "Quiz completed, ending call")
 
-    logger.info("Lesson call ending - closing status sent")
+    logger.info("Quiz call ending - closing status sent")
 
     return "Call ended successfully"
 
 @function_tool
 async def watchdog_survey_completion(ctx: RunContext_T) -> str:
-    """Watchdog function to check lesson completion and retry submissions if needed"""
+    """Watchdog function to check quiz completion and retry submissions if needed"""
     userdata = ctx.userdata
     total_questions = len(userdata.questions)
     answered_questions = len(userdata.questionnaire_answers)
@@ -837,11 +1052,11 @@ async def watchdog_survey_completion(ctx: RunContext_T) -> str:
 
         success = await finalize_survey_with_protection(userdata, ctx)
         if success:
-            logger.info("Watchdog: Successfully finalized lesson")
-            return "Lesson finalized successfully via watchdog"
+            logger.info("Watchdog: Successfully finalized quiz")
+            return "Quiz finalized successfully via watchdog"
         else:
-            logger.error("Watchdog: Failed to finalize lesson")
-            return "Lesson finalization failed via watchdog"
+            logger.error("Watchdog: Failed to finalize quiz")
+            return "Quiz finalization failed via watchdog"
 
     return f"Watchdog check complete: {answered_questions}/{total_questions} answered, {submitted_questions}/{total_questions} submitted, completed: {userdata.survey_completed}"
 
@@ -876,128 +1091,118 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"Room name: {room_name}")
     logger.info(f"Participant ID: {participant_id}")
 
-    # Increment when a new session starts
-    # statsd.increment("livekit.sessions.active")
-
-    # Check if lesson submission already exists for this room
-    existing_lesson_submission = await get_existing_lesson_submission_api(room_name)
-    lesson_data = None
-    submission_id = None
-
-    if existing_lesson_submission:
-        # Lesson submission already exists
-        logger.info(f"Lesson submission already exists for room {room_name} (ID: {existing_lesson_submission['id']})")
-        logger.debug(f"Existing lesson submission data: {existing_lesson_submission}")
-        submission_id = existing_lesson_submission['id']
-        lesson_id = existing_lesson_submission.get('lesson_id')
-
-        try:
-            logger.debug(f"Getting lesson data for ID: {lesson_id}")
-            lesson_data = await get_lesson_by_id(lesson_id)
-            logger.debug(f"Lesson data received: {lesson_data}")
-        except Exception as e:
-            logger.error(f"Failed to get lesson data from API: {e}")
-            # Fallback to basic lesson info
-            lesson_data = {
-                "lesson": {
-                    "id": lesson_id,
-                    "name": "Fallback Lesson",
-                    "intro_prompt": "You are a friendly and encouraging AI voice teacher.",
-                    "purpose_explanation": "Welcome! I'm here to help you learn.",
-                    "greeting": "Hello, welcome to your lesson!",
-                    "closing": "Thank you for completing the lesson. Great job!"
-                },
-                "questions": []
-            }
+    # Extract quiz link token from room name
+    # Room name format: quiz-{token} or similar
+    link_token = None
+    if room_name.startswith("quiz-"):
+        link_token = room_name.replace("quiz-", "")
+    elif "-" in room_name:
+        # Try to extract token from room name
+        parts = room_name.split("-")
+        if len(parts) >= 2:
+            link_token = parts[-1]  # Last part as token
     else:
-        # For new submissions, parse room name to extract URI and link token
-        if "-" in room_name:
-            base_pattern = room_name.rsplit("-", 1)[0]
-            uri = base_pattern
-            link_token = base_pattern
-        else:
-            uri = "default"
-            link_token = room_name
+        link_token = room_name  # Use room name as token
 
-        # Get lesson data
+    logger.info(f"Extracted quiz link token: {link_token}")
+
+    quiz_data = None
+    attempt_id = None
+
+    # Check if attempt already exists for this link token
+    existing_attempt = await quiz_client.get_existing_attempt(link_token)
+    
+    if existing_attempt:
+        # Attempt already exists - resume
+        logger.info(f"Existing attempt found: {existing_attempt['id']}")
+        attempt_id = existing_attempt["id"]
+        quiz_id = existing_attempt["quiz_id"]
+        
         try:
-            logger.debug(f"Trying to get lesson for URI: {uri}")
-            lesson_data = await get_lesson_by_uri_and_token(uri, link_token)
-            lesson = lesson_data.get("lesson", {})
-
-            # Create new lesson submission via API
-            link_type = "phone" if phone_number else "email" if email else "generic"
-            submission_response = await record_lesson_submission_api(
-                lesson_id=lesson["id"],
-                link_token=link_token,
-                link_type=link_type,
-                room_name=room_name,
-                s3_recording_url=None
-            )
-            submission_id = submission_response
-            logger.info(f"New lesson submission created via API with id: {submission_id}")
-
+            quiz_data = await quiz_client.get_quiz_by_id(quiz_id)
+            logger.info(f"Loaded quiz data for existing attempt")
         except Exception as e:
-            logger.error(f"Failed to get lesson or create submission via API: {e}")
-            # Fallback to basic lesson data
-            lesson_data = {
-                "lesson": {
-                    "id": 1,
-                    "name": "Default Lesson",
+            logger.error(f"Failed to load quiz data: {e}")
+            quiz_data = None
+    else:
+        # New attempt - get quiz by link token
+        try:
+            logger.debug(f"Getting quiz for link token: {link_token}")
+            quiz_data = await quiz_client.get_quiz_by_link_token(link_token)
+            
+            if not quiz_data:
+                logger.error(f"Quiz not found for link token: {link_token}")
+                # Fallback
+                quiz_data = {
+                    "quiz": {
+                        "id": "fallback",
+                        "name": "Default Quiz",
+                        "intro_prompt": "You are a friendly and encouraging AI voice teacher.",
+                        "purpose_explanation": "Welcome! I'm here to help you learn.",
+                        "greeting": "Hello, welcome to your quiz!",
+                        "closing": "Thank you for completing the quiz. Great job!"
+                    },
+                    "questions": []
+                }
+                attempt_id = "fallback-attempt-id"
+            else:
+                # Create new attempt
+                quiz_id = quiz_data["quiz"]["id"]
+                attempt_id = await quiz_client.create_attempt(
+                    quiz_id=quiz_id,
+                    user_id=None,  # Anonymous for link-based quizzes
+                    link_token=link_token
+                )
+                
+                if attempt_id:
+                    logger.info(f"Created new attempt: {attempt_id}")
+                else:
+                    logger.error("Failed to create attempt")
+                    attempt_id = "fallback-attempt-id"
+        except Exception as e:
+            logger.error(f"Failed to get quiz or create attempt: {e}")
+            quiz_data = {
+                "quiz": {
+                    "id": "fallback",
+                    "name": "Default Quiz",
                     "intro_prompt": "You are a friendly and encouraging AI voice teacher.",
                     "purpose_explanation": "Welcome! I'm here to help you learn.",
-                    "greeting": "Hello, welcome to your lesson!",
-                    "closing": "Thank you for completing the lesson. Great job!"
+                    "greeting": "Hello, welcome to your quiz!",
+                    "closing": "Thank you for completing the quiz. Great job!"
                 },
                 "questions": []
             }
-            submission_id = "fallback-submission-id"
+            attempt_id = "fallback-attempt-id"
 
     # Initialize user data
     userdata = UserData()
     userdata.customer_phone = phone_number if phone_number else None
     userdata.customer_email = email if email else None
 
-    # Create main agent with lesson data from API
+    # Create main agent with quiz data from Supabase
     userdata.agents.update({
-        "main_agent": MainAgent(lesson_data),
+        "main_agent": MainAgent(quiz_data),
     })
     userdata.questions = userdata.agents["main_agent"].questions
     
-    # Store lesson dict in userdata
-    userdata.lesson = lesson_data.get("lesson", {})
+    # Store quiz dict in userdata (keep lesson for backward compatibility)
+    userdata.lesson = quiz_data.get("quiz", {})
     userdata.campaign = userdata.lesson  # Keep for backward compatibility
     
-    userdata.submission_id = submission_id  # Set submission_id instead of call_id
+    userdata.submission_id = attempt_id  # Set submission_id to attempt_id
     userdata.room = ctx.room  # Store room reference for data publishing
 
     # For backward compatibility, also set call_id to submission_id
-    userdata.call_id = submission_id
+    userdata.call_id = attempt_id
     
-    # Set lesson mode (always true now)
+    # Set lesson mode (always true for quizzes)
     userdata.is_lesson_mode = True
-    logger.info("Lesson mode enabled - quiz evaluation will be used")
+    logger.info("Quiz mode enabled - answers will be saved to Supabase")
     # Initialize performance tracking
-    userdata.total_points_possible = sum(q.get("points", 1) for q in userdata.questions if q.get("is_quiz_question", False))
+    userdata.total_points_possible = sum(q.get("points", 1) for q in userdata.questions if q.get("is_quiz_question", True))
 
-    # Start S3 voice recording only if not already started
-    if not existing_lesson_submission or not existing_lesson_submission.get('s3_recording_url'):
-        recording_success = await start_s3_recording(room_name, userdata)
-        if recording_success:
-            logger.info("S3 Recording started successfully")
-            # Update the submission with the recording URL via API (skip for fallback submission ID)
-            if hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url and submission_id != "fallback-submission-id":
-                success = await update_submission_s3_url_api(submission_id, userdata.s3_recording_url, is_lesson=True)
-                if not success:
-                    logger.warning(f"Failed to update S3 recording URL via API for lesson submission {submission_id}")
-            elif hasattr(userdata, 's3_recording_url') and userdata.s3_recording_url and submission_id == "fallback-submission-id":
-                logger.warning("Cannot update S3 recording URL for fallback submission ID")
-        else:
-            logger.warning("S3 Recording failed, continuing without recording")
-            userdata.s3_recording_url = None  # Explicitly set to None if failed
-    else:
-        logger.info(f"S3 Recording already exists for this lesson submission")
-        userdata.s3_recording_url = existing_lesson_submission.get('s3_recording_url')
+    # S3 recording can be added later if needed
+    userdata.s3_recording_url = None
 
     await ctx.connect()
     session = AgentSession(
@@ -1098,6 +1303,22 @@ async def entrypoint(ctx: agents.JobContext):
     watchdog_task = asyncio.create_task(periodic_watchdog())
 
     try:
+        # Log room participants before starting session
+        logger.info(f"Room participants before session start: {[p.identity for p in ctx.room.remote_participants.values()]}")
+        logger.info(f"Local participant: {ctx.room.local_participant.identity}")
+        
+        # Check for audio tracks from remote participants (simplified - just log all tracks)
+        for participant in ctx.room.remote_participants.values():
+            all_tracks = list(participant.track_publications.values())
+            logger.info(f"Participant {participant.identity} has {len(all_tracks)} track publication(s)")
+            for track_pub in all_tracks:
+                track_name = getattr(track_pub, 'track_name', 'unknown')
+                track_kind = getattr(track_pub, 'kind', None)
+                subscribed = getattr(track_pub, 'subscribed', False)
+                track = getattr(track_pub, 'track', None)
+                muted = getattr(track, 'muted', None) if track else None
+                logger.info(f"  Track: {track_name}, kind: {track_kind}, subscribed: {subscribed}, muted: {muted}")
+        
         await session.start(
             agent=userdata.agents["main_agent"],
             room=ctx.room,
@@ -1105,6 +1326,7 @@ async def entrypoint(ctx: agents.JobContext):
                 noise_cancellation=noise_cancellation.BVC(),
             ),
         )
+        logger.info("Session started successfully - agent is now listening for user audio")
     except Exception as e:
         # Track STT/session errors
         # statsd.increment("survey.errors", tags=["type:stt"])
@@ -1157,11 +1379,7 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception as e:
             logger.error(f"Failed to send first question update: {e}")
 
-    # Cleanup API client resources
-    try:
-        await cleanup_api_client()
-    except Exception as e:
-        logger.warning(f"Failed to cleanup API client: {e}")
+    # No cleanup needed for Supabase client - it's a singleton
 
 if __name__ == "__main__":
     # Start health check server

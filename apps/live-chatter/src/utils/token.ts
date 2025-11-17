@@ -1,29 +1,27 @@
-import { AccessToken } from 'livekit-server-sdk';
-import { LIVEKIT_CONFIG } from '@/config/livekit';
+import { supabase } from '@/integrations/supabase/client';
 
 export async function generateToken(roomName: string, participantName: string): Promise<string> {
   console.log('=== LiveKit Token Generation Debug ===');
-  console.log('LIVEKIT_API_KEY:', LIVEKIT_CONFIG.LIVEKIT_API_KEY);
-  console.log('LIVEKIT_API_SECRET:', LIVEKIT_CONFIG.LIVEKIT_API_SECRET ? '***SET***' : '***NOT SET***');
-  console.log('LIVEKIT_URL:', LIVEKIT_CONFIG.LIVEKIT_URL);
   console.log('Room name:', roomName);
   console.log('Participant name:', participantName);
   console.log('=====================================');
 
-  const at = new AccessToken(
-    LIVEKIT_CONFIG.LIVEKIT_API_KEY,
-    LIVEKIT_CONFIG.LIVEKIT_API_SECRET,
-    {
-      identity: participantName,
-    }
-  );
-
-  at.addGrant({
-    room: roomName,
-    roomJoin: true,
-    canPublish: true,
-    canSubscribe: true,
+  // Call Supabase Edge Function to generate token server-side
+  const { data, error } = await supabase.functions.invoke('generate-livekit-token', {
+    body: {
+      roomName,
+      participantName,
+    },
   });
 
-  return await at.toJwt();
+  if (error) {
+    console.error('Error generating token:', error);
+    throw new Error(`Failed to generate token: ${error.message}`);
+  }
+
+  if (!data || !data.token) {
+    throw new Error('Invalid response from token generation service');
+  }
+
+  return data.token;
 }
