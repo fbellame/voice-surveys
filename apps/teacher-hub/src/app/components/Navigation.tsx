@@ -28,6 +28,7 @@ export function Navigation() {
   }
 
   const navLinks = [
+    { href: "/documents", label: "Documents" },
     { href: "/quizzes", label: "Quizzes" },
     { href: "/lessons", label: "Lessons" },
     { href: "/communities", label: "Communities" },
