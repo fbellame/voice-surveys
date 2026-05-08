@@ -2,17 +2,12 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@shared/supabase.types';
 
-// Use environment variables or fallback to appropriate Supabase instance
-const isDevelopment = import.meta.env.DEV;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 
-  (isDevelopment ? "http://127.0.0.1:54321" : "https://rpgpwailndlmpgufmfzi.supabase.co");
-
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 
-  (isDevelopment 
-    ? "REDACTED_SECRET"
-    : "REDACTED_SECRET"
-  );
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables must be set. Copy .env.example to .env and fill in the values.');
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

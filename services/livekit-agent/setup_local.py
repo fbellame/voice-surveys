@@ -10,7 +10,7 @@ def create_env_file():
     """Create a .env file with local development settings"""
     env_content = """# Supabase Configuration (Local)
 SUPABASE_URL=http://127.0.0.1:54321
-SUPABASE_KEY=REDACTED_SECRET
+SUPABASE_KEY=your_supabase_anon_key  # get from: supabase status (local) or Supabase dashboard (prod)
 
 # LiveKit Configuration
 LIVEKIT_URL=ws://localhost:7880
